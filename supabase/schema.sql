@@ -1,4 +1,5 @@
 create extension if not exists "pgcrypto";
+create extension if not exists "pg_trgm";
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
@@ -23,6 +24,9 @@ alter table public.profiles add column if not exists enrolled_term text;
 
 create unique index if not exists profiles_zid_unique_idx on public.profiles (zid);
 create unique index if not exists profiles_unsw_email_unique_idx on public.profiles (unsw_email);
+create index if not exists profiles_full_name_trgm_idx on public.profiles using gin (full_name gin_trgm_ops);
+create index if not exists profiles_zid_trgm_idx on public.profiles using gin (zid gin_trgm_ops);
+create index if not exists profiles_unsw_email_trgm_idx on public.profiles using gin (unsw_email gin_trgm_ops);
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -235,6 +239,12 @@ create unique index if not exists friend_requests_one_pending_pair_idx
   )
   where status = 'pending';
 
+create index if not exists friend_requests_receiver_status_created_idx
+  on public.friend_requests (receiver_user_id, status, created_at desc);
+
+create index if not exists friend_requests_sender_status_created_idx
+  on public.friend_requests (sender_user_id, status, created_at desc);
+
 create table if not exists public.friendships (
   id uuid primary key default gen_random_uuid(),
   user_a_id uuid not null references public.profiles (id) on delete cascade,
@@ -244,6 +254,9 @@ create table if not exists public.friendships (
   constraint friendships_distinct_users check (user_a_id <> user_b_id),
   constraint friendships_unique_pair unique (user_a_id, user_b_id)
 );
+
+create index if not exists friendships_user_a_id_idx on public.friendships (user_a_id);
+create index if not exists friendships_user_b_id_idx on public.friendships (user_b_id);
 
 create table if not exists public.shared_term_plans (
   id uuid primary key default gen_random_uuid(),
@@ -264,6 +277,9 @@ alter table public.shared_term_plans add column if not exists copied_from_plan_i
 create unique index if not exists shared_term_plans_owner_copy_unique_idx
   on public.shared_term_plans (owner_user_id, copied_from_plan_id);
 
+create index if not exists shared_term_plans_owner_created_idx
+  on public.shared_term_plans (owner_user_id, created_at desc);
+
 create table if not exists public.shared_term_plan_participants (
   id uuid primary key default gen_random_uuid(),
   plan_id uuid not null references public.shared_term_plans (id) on delete cascade,
@@ -271,6 +287,9 @@ create table if not exists public.shared_term_plan_participants (
   created_at timestamptz not null default timezone('utc', now()),
   constraint shared_term_plan_participants_unique unique (plan_id, user_id)
 );
+
+create index if not exists shared_term_plan_participants_user_idx
+  on public.shared_term_plan_participants (user_id, plan_id);
 
 create table if not exists public.shared_term_plan_subjects (
   id uuid primary key default gen_random_uuid(),
@@ -402,6 +421,8 @@ create table if not exists public.user_interests (
   constraint user_interests_unique unique (user_id, interest)
 );
 
+create index if not exists user_interests_user_idx on public.user_interests (user_id);
+
 create table if not exists public.registered_events (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
@@ -417,6 +438,9 @@ create table if not exists public.registered_events (
   created_at timestamptz not null default timezone('utc', now()),
   constraint registered_events_unique unique (user_id, event_id)
 );
+
+create index if not exists registered_events_user_created_idx
+  on public.registered_events (user_id, created_at desc);
 
 create table if not exists public.user_timetable_sources (
   id uuid primary key default gen_random_uuid(),
@@ -453,6 +477,12 @@ create table if not exists public.user_timetable_blocks (
   ),
   constraint user_timetable_blocks_source_check check (source_type in ('manual', 'calendar_url', 'auto_reference'))
 );
+
+create index if not exists user_timetable_blocks_user_term_time_idx
+  on public.user_timetable_blocks (user_id, term, day_of_week, start_minutes);
+
+create index if not exists user_timetable_blocks_user_start_at_idx
+  on public.user_timetable_blocks (user_id, start_at);
 
 alter table public.user_timetable_blocks add column if not exists start_at timestamptz;
 alter table public.user_timetable_blocks add column if not exists end_at timestamptz;

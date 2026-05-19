@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { createSharedPlanAction, removeFriendAction, sendFriendRequestAction } from "@/app/actions";
 import { Notice } from "@/components/notice";
+import { PendingButton } from "@/components/pending-button";
 import { TimetableView } from "@/components/timetable-view";
 import { TERMS, TERM_LABELS } from "@/lib/constants";
 import { getFriendDetail } from "@/lib/data";
@@ -40,9 +41,12 @@ export default async function FriendDetailPage({
           <form action={removeFriendAction} className="mt-5">
             <input type="hidden" name="friend_id" value={friendProfile.id} />
             <input type="hidden" name="return_to" value={`/friends/${friendProfile.id}`} />
-            <button className="rounded-full border border-[var(--danger)]/30 px-4 py-2 text-sm font-semibold text-[var(--danger)] transition hover:bg-[var(--danger-soft)]">
+            <PendingButton
+              pendingLabel="Removing..."
+              className="rounded-full border border-[var(--danger)]/30 px-4 py-2 text-sm font-semibold text-[var(--danger)] transition hover:bg-[var(--danger-soft)]"
+            >
               Remove friend
-            </button>
+            </PendingButton>
           </form>
         </div>
 
@@ -64,9 +68,12 @@ export default async function FriendDetailPage({
                 </option>
               ))}
             </select>
-            <button className="rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)]">
+            <PendingButton
+              pendingLabel="Starting..."
+              className="rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)]"
+            >
               Start plan
-            </button>
+            </PendingButton>
           </div>
         </form>
       </section>
@@ -139,9 +146,12 @@ export default async function FriendDetailPage({
                 <form action={sendFriendRequestAction}>
                   <input type="hidden" name="recipient_id" value={entry.id} />
                   <input type="hidden" name="return_to" value={`/friends/${friendProfile.id}`} />
-                  <button className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white">
+                  <PendingButton
+                    pendingLabel="Sending..."
+                    className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white"
+                  >
                     Add friend
-                  </button>
+                  </PendingButton>
                 </form>
               </div>
             ))

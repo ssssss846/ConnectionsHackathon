@@ -5,6 +5,7 @@ import {
   sendFriendRequestAction,
 } from "@/app/actions";
 import { Notice } from "@/components/notice";
+import { PendingButton } from "@/components/pending-button";
 import { getFriendsData } from "@/lib/data";
 
 export default async function FriendsPage({
@@ -88,16 +89,22 @@ export default async function FriendsPage({
                     <form action={respondToFriendRequestAction}>
                       <input type="hidden" name="request_id" value={request.id} />
                       <input type="hidden" name="decision" value="accept" />
-                      <button className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white">
+                      <PendingButton
+                        pendingLabel="Accepting..."
+                        className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white"
+                      >
                         Accept
-                      </button>
+                      </PendingButton>
                     </form>
                     <form action={respondToFriendRequestAction}>
                       <input type="hidden" name="request_id" value={request.id} />
                       <input type="hidden" name="decision" value="reject" />
-                      <button className="rounded-full border border-[var(--border)] px-4 py-2 text-sm font-semibold">
+                      <PendingButton
+                        pendingLabel="Declining..."
+                        className="rounded-full border border-[var(--border)] px-4 py-2 text-sm font-semibold"
+                      >
                         Decline
-                      </button>
+                      </PendingButton>
                     </form>
                   </div>
                 </div>
@@ -145,9 +152,12 @@ export default async function FriendsPage({
                   <form action={sendFriendRequestAction}>
                     <input type="hidden" name="recipient_id" value={result.id} />
                     <input type="hidden" name="return_to" value={`/friends?query=${params.query}`} />
-                    <button className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white">
+                    <PendingButton
+                      pendingLabel="Sending..."
+                      className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white"
+                    >
                       Add friend
-                    </button>
+                    </PendingButton>
                   </form>
                 </div>
               ))
@@ -201,9 +211,12 @@ export default async function FriendsPage({
                 <form action={sendFriendRequestAction}>
                   <input type="hidden" name="recipient_id" value={mutual.id} />
                   <input type="hidden" name="return_to" value="/friends#same-degree" />
-                  <button className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white">
+                  <PendingButton
+                    pendingLabel="Sending..."
+                    className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white"
+                  >
                     Add friend
-                  </button>
+                  </PendingButton>
                 </form>
               </div>
             ))

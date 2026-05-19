@@ -131,6 +131,7 @@ function registeredEventToRecommendation(event: RegisteredEvent): EventRecommend
 export async function getEventRecommendationsData(selectedFriendIds: string[]): Promise<RecommendationsData> {
   const currentTerm = getCurrentTerm();
   const { supabase, user } = await getViewerContext();
+  const eventsPromise = fetchRubricEvents({ limit: 24 });
   const friends = await getAcceptedFriendProfiles(supabase, user!.id);
   const acceptedFriendIds = new Set(friends.map((friend) => friend.id));
   const cleanFriendIds = [...new Set(selectedFriendIds)].filter((id) => acceptedFriendIds.has(id));
@@ -190,7 +191,7 @@ export async function getEventRecommendationsData(selectedFriendIds: string[]): 
   const sharedInterests = intersectInterests(interestGroups);
   const interestUnion = [...new Set(interestGroups.flat())];
   const preferredInterests = sharedInterests.length ? sharedInterests : interestUnion;
-  const events = await fetchRubricEvents({ limit: 24 });
+  const events = await eventsPromise;
   const now = new Date();
   const latestEventDate = events.reduce((latest, event) => {
     const eventDate = event.endsAt ?? event.startsAt;

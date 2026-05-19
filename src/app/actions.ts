@@ -17,6 +17,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { fetchBlocksFromCalendarUrl } from "@/lib/timetable";
 import type { FormState, PlannerChoice, TimetableBlock } from "@/lib/types";
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
+
 function withMessage(path: string, key: "notice" | "error", message: string) {
   const url = new URL(path, "http://localhost");
   url.searchParams.set(key, message);
@@ -32,6 +34,100 @@ function canAccessPlan(
   userId: string,
 ): plan is { owner_user_id: string; friend_user_id: string | null } {
   return Boolean(plan && plan.owner_user_id === userId);
+}
+
+async function saveSettingsForUser(
+  supabase: SupabaseServerClient,
+  userId: string,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = readSettingsFromFormData(formData);
+  if ("error" in parsed) return parsed.error;
+
+  const termsToUpdate = parsed.data.sourceType === "calendar_url" ? TERMS : [parsed.data.term];
+  let blocksToInsert: Omit<TimetableBlock, "id">[] = [];
+
+  if (parsed.data.sourceType === "calendar_url" && parsed.data.calendarUrl) {
+    try {
+      blocksToInsert = await fetchBlocksFromCalendarUrl({
+        calendarUrl: parsed.data.calendarUrl,
+        term: parsed.data.term,
+        userId,
+      });
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : "Could not import that calendar link.",
+      };
+    }
+  } else {
+    blocksToInsert = parsed.data.blocks.map((block) => ({
+      ...block,
+      user_id: userId,
+      source_type: "manual" as const,
+    }));
+  }
+
+  await supabase.from("user_interests").delete().eq("user_id", userId);
+  if (parsed.data.interests.length) {
+    const { error: interestsError } = await supabase.from("user_interests").insert(
+      parsed.data.interests.map((interest) => ({
+        user_id: userId,
+        interest,
+      })),
+    );
+
+    if (interestsError) {
+      return { error: interestsError.message };
+    }
+  }
+
+  const { error: profileError } = await supabase
+    .from("profiles")
+    .update({
+      degree: parsed.data.degree,
+      enrolled_year: parsed.data.enrolledYear,
+      enrolled_term: parsed.data.enrolledTerm,
+    })
+    .eq("id", userId);
+
+  if (profileError) {
+    return { error: profileError.message };
+  }
+
+  const { error: sourceError } = await supabase.from("user_timetable_sources").upsert(
+    termsToUpdate.map((term) => ({
+      user_id: userId,
+      term,
+      source_type: parsed.data.sourceType,
+      calendar_url: parsed.data.sourceType === "calendar_url" ? parsed.data.calendarUrl : null,
+      notes: null,
+      updated_at: new Date().toISOString(),
+    })),
+    { onConflict: "user_id,term" },
+  );
+
+  if (sourceError) {
+    return { error: sourceError.message };
+  }
+
+  const deleteQuery = supabase.from("user_timetable_blocks").delete().eq("user_id", userId);
+  const { error: deleteBlocksError } =
+    parsed.data.sourceType === "calendar_url"
+      ? await deleteQuery
+      : await deleteQuery.eq("term", parsed.data.term);
+
+  if (deleteBlocksError) {
+    return { error: deleteBlocksError.message };
+  }
+
+  if (blocksToInsert.length) {
+    const { error: blocksError } = await supabase.from("user_timetable_blocks").insert(blocksToInsert);
+    if (blocksError) {
+      return { error: blocksError.message };
+    }
+  }
+
+  return { success: "Settings saved." };
 }
 
 export async function signUpAction(_state: FormState, formData: FormData): Promise<FormState> {
@@ -150,104 +246,22 @@ export async function saveSettingsAction(
   _state: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const parsed = readSettingsFromFormData(formData);
-  if ("error" in parsed) return parsed.error;
-
   const { supabase, user } = await getViewerContext();
-  const termsToUpdate = parsed.data.sourceType === "calendar_url" ? TERMS : [parsed.data.term];
-  let blocksToInsert: Omit<TimetableBlock, "id">[] = [];
-
-  if (parsed.data.sourceType === "calendar_url" && parsed.data.calendarUrl) {
-    try {
-      blocksToInsert = await fetchBlocksFromCalendarUrl({
-        calendarUrl: parsed.data.calendarUrl,
-        term: parsed.data.term,
-        userId: user!.id,
-      });
-    } catch (error) {
-      return {
-        error: error instanceof Error ? error.message : "Could not import that calendar link.",
-      };
-    }
-  } else {
-    blocksToInsert = parsed.data.blocks.map((block) => ({
-      ...block,
-      user_id: user!.id,
-      source_type: "manual" as const,
-    }));
-  }
-
-  await supabase.from("user_interests").delete().eq("user_id", user!.id);
-  if (parsed.data.interests.length) {
-    const { error: interestsError } = await supabase.from("user_interests").insert(
-      parsed.data.interests.map((interest) => ({
-        user_id: user!.id,
-        interest,
-      })),
-    );
-
-    if (interestsError) {
-      return { error: interestsError.message };
-    }
-  }
-
-  const { error: profileError } = await supabase
-    .from("profiles")
-    .update({
-      degree: parsed.data.degree,
-      enrolled_year: parsed.data.enrolledYear,
-      enrolled_term: parsed.data.enrolledTerm,
-    })
-    .eq("id", user!.id);
-
-  if (profileError) {
-    return { error: profileError.message };
-  }
-
-  const { error: sourceError } = await supabase.from("user_timetable_sources").upsert(
-    termsToUpdate.map((term) => ({
-      user_id: user!.id,
-      term,
-      source_type: parsed.data.sourceType,
-      calendar_url: parsed.data.sourceType === "calendar_url" ? parsed.data.calendarUrl : null,
-      notes: null,
-      updated_at: new Date().toISOString(),
-    })),
-    { onConflict: "user_id,term" },
-  );
-
-  if (sourceError) {
-    return { error: sourceError.message };
-  }
-
-  const deleteQuery = supabase.from("user_timetable_blocks").delete().eq("user_id", user!.id);
-  const { error: deleteBlocksError } =
-    parsed.data.sourceType === "calendar_url"
-      ? await deleteQuery
-      : await deleteQuery.eq("term", parsed.data.term);
-
-  if (deleteBlocksError) {
-    return { error: deleteBlocksError.message };
-  }
-
-  if (blocksToInsert.length) {
-    const { error: blocksError } = await supabase.from("user_timetable_blocks").insert(blocksToInsert);
-    if (blocksError) {
-      return { error: blocksError.message };
-    }
-  }
+  const result = await saveSettingsForUser(supabase, user!.id, formData);
+  if (result.error) return result;
 
   revalidatePath("/dashboard");
   revalidatePath("/events");
   revalidatePath("/settings");
-  return { success: "Settings saved." };
+  return result;
 }
 
 export async function saveSettingsAndSubjectsAction(
-  state: FormState,
+  _state: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const settingsResult = await saveSettingsAction(state, formData);
+  const { supabase, user } = await getViewerContext();
+  const settingsResult = await saveSettingsForUser(supabase, user!.id, formData);
   if (settingsResult.error) {
     return settingsResult;
   }
@@ -255,7 +269,6 @@ export async function saveSettingsAndSubjectsAction(
   const parsedSubjects = readSubjectsFromFormData(formData);
   if ("error" in parsedSubjects) return parsedSubjects.error;
 
-  const { supabase, user } = await getViewerContext();
   const { error: deleteError } = await supabase
     .from("user_term_subjects")
     .delete()

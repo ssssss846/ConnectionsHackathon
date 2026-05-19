@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { PendingButton } from "@/components/pending-button";
 import type {
   PlannerChoice,
   PlannerClassOption,
@@ -653,7 +654,8 @@ export function PlannerWorkspace({
                         <form action={removeParticipantAction}>
                           <input type="hidden" name="plan_id" value={plan.id} />
                           <input type="hidden" name="participant_id" value={participant.id} />
-                          <button
+                          <PendingButton
+                            pendingLabel="..."
                             title={`Remove ${participant.full_name}`}
                             className={`flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold transition ${
                               activeTab === participant.id
@@ -662,7 +664,7 @@ export function PlannerWorkspace({
                             }`}
                           >
                             ×
-                          </button>
+                          </PendingButton>
                         </form>
                       </div>
                     );
@@ -685,13 +687,16 @@ export function PlannerWorkspace({
                         <form key={friend.id} action={addParticipantAction}>
                           <input type="hidden" name="plan_id" value={plan.id} />
                           <input type="hidden" name="participant_id" value={friend.id} />
-                          <button className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition hover:bg-[var(--accent-soft)]">
+                          <PendingButton
+                            pendingLabel="Adding..."
+                            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition hover:bg-[var(--accent-soft)]"
+                          >
                             <span>
                               <span className="block text-sm font-semibold">{friend.full_name}</span>
                               <span className="block text-xs text-[var(--muted)]">{friend.zid}</span>
                             </span>
                             <span className="text-xs font-semibold text-[var(--accent-strong)]">Add</span>
-                          </button>
+                          </PendingButton>
                         </form>
                       ))
                     ) : (
@@ -871,9 +876,12 @@ export function PlannerWorkspace({
             <form action={saveAction}>
               <input type="hidden" name="plan_id" value={plan.id} />
               <input type="hidden" name="planner_choices" value={JSON.stringify(choices)} />
-              <button className="rounded-full bg-[var(--accent)] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)]">
+              <PendingButton
+                pendingLabel="Saving..."
+                className="rounded-full bg-[var(--accent)] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)]"
+              >
                 Save planner
-              </button>
+              </PendingButton>
             </form>
           </div>
         </section>

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { createPersonalPlanAction, deleteSharedPlanAction } from "@/app/actions";
 import { Notice } from "@/components/notice";
+import { PendingButton } from "@/components/pending-button";
 import { TERMS, TERM_LABELS } from "@/lib/constants";
 import { getPlansIndexData } from "@/lib/data";
 
@@ -43,10 +44,13 @@ export default async function PlansIndexPage({
                 </option>
               ))}
             </select>
-            <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)]">
+            <PendingButton
+              pendingLabel="Creating..."
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)]"
+            >
               <span aria-hidden="true" className="text-lg leading-none">+</span>
               New
-            </button>
+            </PendingButton>
           </div>
         </form>
       </section>
@@ -80,9 +84,12 @@ export default async function PlansIndexPage({
                   </Link>
                   <form action={deleteSharedPlanAction}>
                     <input type="hidden" name="plan_id" value={plan.id} />
-                    <button className="rounded-full border border-[var(--danger)]/30 px-3 py-1 text-xs font-semibold text-[var(--danger)] transition hover:bg-[var(--danger-soft)]">
+                    <PendingButton
+                      pendingLabel="Deleting..."
+                      className="rounded-full border border-[var(--danger)]/30 px-3 py-1 text-xs font-semibold text-[var(--danger)] transition hover:bg-[var(--danger-soft)]"
+                    >
                       Delete
-                    </button>
+                    </PendingButton>
                   </form>
                 </div>
               </div>

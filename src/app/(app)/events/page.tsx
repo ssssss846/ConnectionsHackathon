@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { registerEventAction, unregisterEventAction } from "@/app/actions";
 import { Notice } from "@/components/notice";
+import { PendingButton } from "@/components/pending-button";
 import { TimetableView } from "@/components/timetable-view";
 import { getEventRecommendationsData } from "@/lib/recommendations";
 
@@ -221,9 +222,12 @@ export default async function EventsPage({
                     <form action={unregisterEventAction}>
                       <input type="hidden" name="event_id" value={event.id} />
                       <input type="hidden" name="return_to" value={returnTo} />
-                      <button className="inline-flex rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-700">
+                      <PendingButton
+                        pendingLabel="Updating..."
+                        className="inline-flex rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-700"
+                      >
                         Registered
-                      </button>
+                      </PendingButton>
                     </form>
                   ) : (
                     <form action={registerEventAction}>
@@ -237,9 +241,12 @@ export default async function EventsPage({
                       <input type="hidden" name="location" value={event.location} />
                       <input type="hidden" name="url" value={event.url} />
                       <input type="hidden" name="return_to" value={returnTo} />
-                      <button className="inline-flex rounded-full border border-violet-300 bg-violet-100/70 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-200">
+                      <PendingButton
+                        pendingLabel="Updating..."
+                        className="inline-flex rounded-full border border-violet-300 bg-violet-100/70 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-200"
+                      >
                         Mark as registered
-                      </button>
+                      </PendingButton>
                     </form>
                   )}
                 </div>
