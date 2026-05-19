@@ -1,11 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { registerEventAction } from "@/app/actions";
+import { Notice } from "@/components/notice";
 import { TimetableView } from "@/components/timetable-view";
 import { getEventRecommendationsData } from "@/lib/recommendations";
 
 type EventsSearchParams = {
   friend?: string | string[];
+  notice?: string;
+  error?: string;
 };
 
 function formatDate(value: string | null) {
@@ -26,6 +30,15 @@ function normalizeSelectedFriends(value: string | string[] | undefined) {
   return Array.isArray(value) ? value : [value];
 }
 
+function buildEventsReturnTo(friendIds: string[]) {
+  const params = new URLSearchParams();
+  for (const id of friendIds) {
+    params.append("friend", id);
+  }
+
+  return params.size ? `/events?${params.toString()}` : "/events";
+}
+
 export default async function EventsPage({
   searchParams,
 }: {
@@ -36,6 +49,7 @@ export default async function EventsPage({
   const participantLabel = data.selectedFriends.length
     ? ["You", ...data.selectedFriends.map((friend) => friend.full_name)].join(", ")
     : "You";
+  const returnTo = buildEventsReturnTo(data.selectedFriendIds);
 
   return (
     <div className="space-y-8">
@@ -109,51 +123,31 @@ export default async function EventsPage({
         </section>
       ) : null}
 
+      {params.notice ? <Notice tone="success" message={params.notice} /> : null}
+      {params.error ? <Notice tone="error" message={params.error} /> : null}
+
       <section className="rounded-[32px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)]">
-        <h2 className="text-xl font-semibold">Shared free time calendar</h2>
-        <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold text-[var(--muted)]">
-          <span className="inline-flex items-center gap-2">
-            <span className="h-3 w-3 rounded-sm border border-emerald-300 bg-emerald-100" />
-            Everyone is free
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <span className="h-3 w-3 rounded-sm bg-[var(--accent)]" />
-            Class or busy time
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <span className="h-3 w-3 rounded-sm bg-orange-500" />
-            Matching event or overlap
-          </span>
-        </div>
-        {data.sharedInterests.length ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {data.sharedInterests.map((interest) => (
-              <span
-                key={interest}
-                className="rounded-full bg-[var(--accent-soft)] px-3 py-2 text-xs font-semibold capitalize text-[var(--accent-strong)]"
-              >
-                {interest}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        <h2 className="text-xl font-semibold">Free time and Events Calendar</h2>
         <div className="mt-5">
           <TimetableView
             blocks={data.calendarBlocks}
             freeSlots={data.sharedFreeSlots}
             sharedParticipantLabel={participantLabel}
             emptyMessage="No shared free time found for this group."
+            showLayerControls
+            interestLabels={data.sharedInterests}
           />
         </div>
       </section>
 
       {data.recommendations.length ? (
         <section id="recommended-events" className="space-y-5">
-          <h2 className="text-2xl font-semibold">Recommended Events</h2>
+          <h2 className="text-2xl font-semibold">Suggested Events</h2>
           <div className="grid gap-5 lg:grid-cols-2">
             {data.recommendations.map((event) => (
             <article
               key={event.id}
+              id={`event-${event.id}`}
               className="overflow-hidden rounded-[28px] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow)]"
             >
               {event.imageUrl ? (
@@ -214,14 +208,41 @@ export default async function EventsPage({
                   </div>
                 ) : null}
 
-                <a
-                  href={event.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex rounded-full border border-[var(--border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                >
-                  Sign up on Rubric
-                </a>
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href={event.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex rounded-full border border-[var(--border)] px-4 py-2 text-sm font-semibold transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                  >
+                    Sign up on Rubric
+                  </a>
+                  {event.isRegistered ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex rounded-full bg-violet-100 px-4 py-2 text-sm font-semibold text-violet-700"
+                    >
+                      Registered
+                    </button>
+                  ) : (
+                    <form action={registerEventAction}>
+                      <input type="hidden" name="event_id" value={event.id} />
+                      <input type="hidden" name="title" value={event.title} />
+                      <input type="hidden" name="club_name" value={event.clubName} />
+                      <input type="hidden" name="category" value={event.category} />
+                      <input type="hidden" name="starts_at" value={event.startsAt ?? ""} />
+                      <input type="hidden" name="ends_at" value={event.endsAt ?? ""} />
+                      <input type="hidden" name="time_label" value={event.timeLabel} />
+                      <input type="hidden" name="location" value={event.location} />
+                      <input type="hidden" name="url" value={event.url} />
+                      <input type="hidden" name="return_to" value={returnTo} />
+                      <button className="inline-flex rounded-full border border-violet-300 bg-violet-100/70 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-200">
+                        Mark as registered
+                      </button>
+                    </form>
+                  )}
+                </div>
               </div>
             </article>
             ))}

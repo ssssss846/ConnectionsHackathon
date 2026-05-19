@@ -315,6 +315,41 @@ export async function saveOnboardingInterestsAction(
   return { success: "Interests saved." };
 }
 
+export async function registerEventAction(formData: FormData) {
+  const eventId = String(formData.get("event_id") ?? "").trim();
+  const returnTo = String(formData.get("return_to") ?? "/events");
+  const startsAt = String(formData.get("starts_at") ?? "").trim() || null;
+  const endsAt = String(formData.get("ends_at") ?? "").trim() || null;
+  const { supabase, user } = await getViewerContext();
+
+  if (!eventId) {
+    redirect(withMessage(returnTo, "error", "Choose a valid event."));
+  }
+
+  const { error } = await supabase.from("registered_events").upsert(
+    {
+      user_id: user!.id,
+      event_id: eventId,
+      title: String(formData.get("title") ?? "Registered event").trim().slice(0, 180),
+      club_name: String(formData.get("club_name") ?? "").trim().slice(0, 180) || null,
+      category: String(formData.get("category") ?? "").trim().slice(0, 100) || null,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      time_label: String(formData.get("time_label") ?? "").trim().slice(0, 180) || null,
+      location: String(formData.get("location") ?? "").trim().slice(0, 240) || null,
+      url: String(formData.get("url") ?? "").trim().slice(0, 500) || null,
+    },
+    { onConflict: "user_id,event_id" },
+  );
+
+  if (error) {
+    redirect(withMessage(returnTo, "error", error.message));
+  }
+
+  revalidatePath("/events");
+  redirect(withMessage(returnTo, "notice", "Event marked as registered."));
+}
+
 export async function signOutAction() {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();

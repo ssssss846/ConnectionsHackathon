@@ -12,9 +12,12 @@ type TimetableViewProps = {
   emptyMessage?: string;
   sharedParticipantLabel?: string;
   showFreeSlots?: boolean;
+  showLayerControls?: boolean;
+  interestLabels?: string[];
 };
 
 type CalendarView = "month" | "week" | "day";
+type CalendarLayer = "free" | "busy" | "suggested";
 
 const HOURS = Array.from({ length: 15 }, (_, index) => index + 8);
 const START_MINUTES = 8 * 60;
@@ -107,6 +110,53 @@ function getBlockId(block: TimetableBlock) {
     block.id ??
     `${block.start_at ?? "weekly"}-${block.day_of_week}-${block.start_minutes}-${block.end_minutes}-${block.label}`
   );
+}
+
+function getEventCardHref(block: TimetableBlock) {
+  if (block.source_type !== "auto_reference" || !block.id) return null;
+  if (block.id.startsWith("registered-")) return null;
+  const eventId = block.id.replace(/^(rubric|suggested|registered)-/, "");
+  return eventId ? `#event-${eventId}` : null;
+}
+
+function isRegisteredEventBlock(block: TimetableBlock) {
+  return block.source_type === "auto_reference" && block.id?.startsWith("registered-");
+}
+
+function isSuggestedEventBlock(block: TimetableBlock) {
+  return block.source_type === "auto_reference" && !isRegisteredEventBlock(block);
+}
+
+function getMonthBlockClasses(block: PositionedBlock) {
+  if (isRegisteredEventBlock(block)) {
+    return "bg-violet-600 text-white";
+  }
+
+  if (isSuggestedEventBlock(block)) {
+    return "border border-violet-300 bg-violet-100/70 text-violet-800";
+  }
+
+  if (block.isOverlapping) {
+    return "bg-orange-100 text-orange-700";
+  }
+
+  return "bg-[var(--accent-soft)] text-[var(--accent-strong)]";
+}
+
+function getWeekBlockClasses(block: PositionedBlock) {
+  if (isRegisteredEventBlock(block)) {
+    return "border-violet-600 bg-violet-500 text-white";
+  }
+
+  if (isSuggestedEventBlock(block)) {
+    return "border-violet-300 bg-violet-100/75 text-violet-800";
+  }
+
+  if (block.isOverlapping) {
+    return "border-orange-600 bg-orange-500 text-white";
+  }
+
+  return "border-[var(--accent)] bg-[var(--accent)] text-white";
 }
 
 function getDayOfWeek(date: Date) {
@@ -217,9 +267,16 @@ export function TimetableView({
   emptyMessage = "No busy blocks saved yet.",
   sharedParticipantLabel = "Everyone selected",
   showFreeSlots = true,
+  showLayerControls = false,
+  interestLabels = [],
 }: TimetableViewProps) {
   const [view, setView] = useState<CalendarView>("week");
   const [visibleDate, setVisibleDate] = useState(() => new Date());
+  const [visibleLayers, setVisibleLayers] = useState<Record<CalendarLayer, boolean>>({
+    free: true,
+    busy: true,
+    suggested: true,
+  });
   const selectedDay = useMemo(() => {
     const day = visibleDate.getDay();
     return day === 0 ? 7 : day;
@@ -248,7 +305,20 @@ export function TimetableView({
     setVisibleDate(addDays(monday, dayOfWeek - 1));
   }
 
+  function toggleLayer(layer: CalendarLayer) {
+    setVisibleLayers((current) => ({
+      ...current,
+      [layer]: !current[layer],
+    }));
+  }
+
   const visibleDays = view === "day" ? weekDates.filter((day) => day.value === selectedDay) : weekDates;
+  const filteredBlocks = showLayerControls
+    ? blocks.filter((block) =>
+        block.source_type === "auto_reference" ? visibleLayers.suggested : visibleLayers.busy,
+      )
+    : blocks;
+  const filteredFreeSlots = showLayerControls && !visibleLayers.free ? [] : freeSlots;
 
   return (
     <section className="overflow-hidden rounded-[32px] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow)]">
@@ -259,6 +329,19 @@ export function TimetableView({
             {view === "month" ? "Month view" : view === "week" ? "Week view" : "Day view"}
           </p>
         </div>
+
+        {interestLabels.length ? (
+          <div className="flex min-w-0 flex-1 flex-wrap justify-center gap-2">
+            {interestLabels.map((interest) => (
+              <span
+                key={interest}
+                className="rounded-full bg-[var(--accent-soft)] px-3 py-2 text-xs font-semibold capitalize text-[var(--accent-strong)]"
+              >
+                {interest}
+              </span>
+            ))}
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-white/80 p-1">
@@ -325,6 +408,42 @@ export function TimetableView({
         ) : null}
       </div>
 
+      {showLayerControls ? (
+        <div className="flex flex-wrap gap-2 border-b border-[var(--border)] bg-white/50 px-4 py-3 text-xs font-semibold">
+          {[
+            {
+              key: "free" as const,
+              label: "Everyone is free",
+              swatch: "border border-emerald-300 bg-emerald-100",
+            },
+            {
+              key: "busy" as const,
+              label: "Class or busy time",
+              swatch: "bg-[var(--accent)]",
+            },
+            {
+              key: "suggested" as const,
+              label: "Suggested events",
+              swatch: "bg-violet-500",
+            },
+          ].map((layer) => (
+            <button
+              key={layer.key}
+              type="button"
+              onClick={() => toggleLayer(layer.key)}
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 transition ${
+                visibleLayers[layer.key]
+                  ? "border-[var(--accent)] bg-white text-[var(--foreground)]"
+                  : "border-[var(--border)] bg-white/60 text-[var(--muted)] opacity-60"
+              }`}
+            >
+              <span className={`h-3 w-3 rounded-sm ${layer.swatch}`} />
+              {layer.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {view === "month" ? (
         <div className="grid grid-cols-7 border-b border-[var(--border)] text-xs font-semibold text-[var(--muted)]">
           {WEEK_DAYS.map((day) => (
@@ -333,8 +452,8 @@ export function TimetableView({
             </div>
           ))}
           {monthCells.map((date) => {
-            const dayBlocks = layoutDayBlocks(blocks.filter((block) => blockMatchesDate(block, date)));
-            const dayFreeSlots = freeSlots.filter((slot) => slotMatchesDate(slot, date));
+            const dayBlocks = layoutDayBlocks(filteredBlocks.filter((block) => blockMatchesDate(block, date)));
+            const dayFreeSlots = filteredFreeSlots.filter((slot) => slotMatchesDate(slot, date));
 
             return (
               <div
@@ -363,18 +482,21 @@ export function TimetableView({
                         </a>
                       ))
                     : null}
-                  {dayBlocks.slice(0, 3).map((block) => (
-                    <p
-                      key={getBlockId(block)}
-                      className={`truncate rounded-md px-2 py-1 text-[11px] font-semibold ${
-                        block.isOverlapping || block.source_type === "auto_reference"
-                          ? "bg-orange-100 text-orange-700"
-                          : "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
-                      }`}
-                    >
-                      {formatMinutes(block.start_minutes)} {block.label}
-                    </p>
-                  ))}
+                  {dayBlocks.slice(0, 3).map((block) => {
+                    const href = getEventCardHref(block);
+                    const className = `block truncate rounded-md px-2 py-1 text-[11px] font-semibold transition hover:brightness-95 ${getMonthBlockClasses(block)}`;
+                    const content = `${formatMinutes(block.start_minutes)} ${block.label}`;
+
+                    return href ? (
+                      <a key={getBlockId(block)} href={href} className={className}>
+                        {content}
+                      </a>
+                    ) : (
+                      <p key={getBlockId(block)} className={className}>
+                        {content}
+                      </p>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -412,8 +534,8 @@ export function TimetableView({
             </div>
 
             {visibleDays.map((day) => {
-              const dayBlocks = layoutDayBlocks(blocks.filter((block) => blockMatchesDate(block, day.date)));
-              const dayFreeSlots = freeSlots.filter((slot) => slotMatchesDate(slot, day.date));
+              const dayBlocks = layoutDayBlocks(filteredBlocks.filter((block) => blockMatchesDate(block, day.date)));
+              const dayFreeSlots = filteredFreeSlots.filter((slot) => slotMatchesDate(slot, day.date));
 
               return (
                 <div
@@ -441,7 +563,7 @@ export function TimetableView({
                             height: Math.max(28, (slot.endMinutes - slot.startMinutes) * PX_PER_MINUTE),
                           }}
                         >
-                          Shared free
+                          Shared free time
                           <span className="block font-medium">
                             {formatMinutes(slot.startMinutes)} - {formatMinutes(slot.endMinutes)}
                           </span>
@@ -456,28 +578,41 @@ export function TimetableView({
                     const displayStart = Math.max(block.start_minutes, START_MINUTES);
                     const displayEnd = Math.min(block.end_minutes, END_MINUTES);
                     if (displayStart >= displayEnd) return null;
-                    const isEventHighlight = block.source_type === "auto_reference";
+                    const href = getEventCardHref(block);
+                    const className = `absolute z-20 rounded-lg border px-2 py-1 text-xs font-semibold shadow-md transition hover:brightness-95 ${getWeekBlockClasses(block)}`;
+                    const style = {
+                      top: (displayStart - START_MINUTES) * PX_PER_MINUTE,
+                      height: Math.max(30, (displayEnd - displayStart) * PX_PER_MINUTE),
+                      left: `calc(${block.overlapIndex * columnWidth}% + ${8 + overlapGap}px)`,
+                      width: `calc(${columnWidth}% - ${16 + overlapGap}px)`,
+                    };
+                    const content = (
+                      <>
+                        <p className="truncate">{block.label}</p>
+                        <p className="truncate text-[11px] font-medium opacity-80">
+                          {formatMinutes(block.start_minutes)} - {formatMinutes(block.end_minutes)}
+                        </p>
+                      </>
+                    );
 
-                    return (
+                    return href ? (
+                      <a
+                        key={id}
+                        href={href}
+                        title={`${block.label}: ${formatMinutes(block.start_minutes)} to ${formatMinutes(block.end_minutes)}${block.location ? `, ${block.location}` : ""}`}
+                        className={className}
+                        style={style}
+                      >
+                        {content}
+                      </a>
+                    ) : (
                       <div
                         key={id}
                         title={`${block.label}: ${formatMinutes(block.start_minutes)} to ${formatMinutes(block.end_minutes)}${block.location ? `, ${block.location}` : ""}`}
-                        className={`absolute z-20 rounded-lg border px-2 py-1 text-xs font-semibold text-white shadow-md ${
-                          block.isOverlapping || isEventHighlight
-                            ? "border-orange-600 bg-orange-500"
-                            : "border-[var(--accent)] bg-[var(--accent)]"
-                        }`}
-                        style={{
-                          top: (displayStart - START_MINUTES) * PX_PER_MINUTE,
-                          height: Math.max(30, (displayEnd - displayStart) * PX_PER_MINUTE),
-                          left: `calc(${block.overlapIndex * columnWidth}% + ${8 + overlapGap}px)`,
-                          width: `calc(${columnWidth}% - ${16 + overlapGap}px)`,
-                        }}
+                        className={className}
+                        style={style}
                       >
-                        <p className="truncate">{block.label}</p>
-                        <p className="truncate text-[11px] font-medium text-white/85">
-                          {formatMinutes(block.start_minutes)} - {formatMinutes(block.end_minutes)}
-                        </p>
+                        {content}
                       </div>
                     );
                   })}
@@ -488,7 +623,7 @@ export function TimetableView({
         </div>
       )}
 
-      {!blocks.length && !freeSlots.length ? (
+      {!filteredBlocks.length && !filteredFreeSlots.length ? (
         <p className="px-5 py-4 text-sm text-[var(--muted)]">{emptyMessage}</p>
       ) : null}
     </section>

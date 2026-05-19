@@ -402,6 +402,22 @@ create table if not exists public.user_interests (
   constraint user_interests_unique unique (user_id, interest)
 );
 
+create table if not exists public.registered_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  event_id text not null,
+  title text not null,
+  club_name text,
+  category text,
+  starts_at timestamptz,
+  ends_at timestamptz,
+  time_label text,
+  location text,
+  url text,
+  created_at timestamptz not null default timezone('utc', now()),
+  constraint registered_events_unique unique (user_id, event_id)
+);
+
 create table if not exists public.user_timetable_sources (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
@@ -450,6 +466,7 @@ alter table public.shared_term_plan_participants enable row level security;
 alter table public.shared_term_plan_subjects enable row level security;
 alter table public.shared_term_plan_class_choices enable row level security;
 alter table public.user_interests enable row level security;
+alter table public.registered_events enable row level security;
 alter table public.user_timetable_sources enable row level security;
 alter table public.user_timetable_blocks enable row level security;
 
@@ -711,6 +728,21 @@ using (
 drop policy if exists "interests mutate self" on public.user_interests;
 create policy "interests mutate self"
 on public.user_interests
+for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "registered events read self" on public.registered_events;
+create policy "registered events read self"
+on public.registered_events
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "registered events mutate self" on public.registered_events;
+create policy "registered events mutate self"
+on public.registered_events
 for all
 to authenticated
 using (auth.uid() = user_id)

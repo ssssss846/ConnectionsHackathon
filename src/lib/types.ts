@@ -149,6 +149,21 @@ export type FreeTimeSlot = {
   endMinutes: number;
 };
 
+export type RegisteredEvent = {
+  id?: string;
+  user_id: string;
+  event_id: string;
+  title: string;
+  club_name: string | null;
+  category: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  time_label: string | null;
+  location: string | null;
+  url: string | null;
+  created_at?: string;
+};
+
 export type DegreeMutual = Profile & {
   mutual_friend_count: number;
 };
