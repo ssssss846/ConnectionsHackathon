@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { TERMS, orderFriendPair, type Term } from "@/lib/constants";
+import { getCurrentTerm, TERMS, orderFriendPair, type Term } from "@/lib/constants";
 import { getCommonSubjects, groupSubjectsByTerm } from "@/lib/forms";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { fetchPlannerClasses } from "@/lib/unsw-courses";
@@ -17,6 +17,9 @@ import type {
   SubjectRow,
   SubjectSelection,
   SubjectsByTerm,
+  TimetableBlock,
+  TimetableSource,
+  UserInterestRow,
   Viewer,
 } from "@/lib/types";
 
@@ -141,6 +144,7 @@ export async function getDashboardData() {
   const { user, profile } = await getViewerContext();
   const subjects = await getUserSubjects(user!.id);
   const subjectsByTerm = groupSubjectsByTerm(subjects);
+  const currentTerm = getCurrentTerm();
 
   const { supabase } = await getViewerContext(false);
   const { data: friendshipRows } = await supabase
@@ -192,8 +196,77 @@ export async function getDashboardData() {
     profile: profile!,
     subjectRows: subjects,
     subjectsByTerm,
+    currentTerm,
+    timetableBlocks: await getUserTimetableBlocksForTerms(user!.id),
     sharedFriendsBySubject,
   };
+}
+
+export async function getUserInterests(userId: string) {
+  const { supabase } = await getViewerContext(false);
+  const { data } = await supabase
+    .from("user_interests")
+    .select("user_id, interest")
+    .eq("user_id", userId)
+    .order("interest");
+
+  return (data ?? []) as UserInterestRow[];
+}
+
+export async function getUserTimetableBlocks(userId: string, term: Term) {
+  return getUserTimetableBlocksForTerms(userId, [term]);
+}
+
+export async function getUserTimetableBlocksForTerms(userId: string, terms: Term[] = [...TERMS]) {
+  const { supabase } = await getViewerContext(false);
+  const { data } = await supabase
+    .from("user_timetable_blocks")
+    .select("*")
+    .eq("user_id", userId)
+    .in("term", terms)
+    .order("day_of_week")
+    .order("start_minutes");
+
+  return (data ?? []) as TimetableBlock[];
+}
+
+export async function getUserTimetableSource(userId: string, term: Term) {
+  const { supabase } = await getViewerContext(false);
+  const { data } = await supabase
+    .from("user_timetable_sources")
+    .select("id, user_id, term, source_type, calendar_url, notes, updated_at")
+    .eq("user_id", userId)
+    .eq("term", term)
+    .maybeSingle();
+
+  return (data ?? null) as TimetableSource | null;
+}
+
+export async function getSettingsData() {
+  const { user, profile } = await getViewerContext();
+  const currentTerm = getCurrentTerm();
+  const [subjectRows, interests, timetableSource, timetableBlocks] = await Promise.all([
+    getUserSubjects(user!.id),
+    getUserInterests(user!.id),
+    getUserTimetableSource(user!.id, currentTerm),
+    getUserTimetableBlocks(user!.id, currentTerm),
+  ]);
+
+  return {
+    user: user!,
+    profile: profile!,
+    currentTerm,
+    subjectsByTerm: groupSubjectsByTerm(subjectRows),
+    interests: interests.map((row) => row.interest),
+    timetableSource,
+    timetableBlocks,
+  };
+}
+
+export async function getAcceptedFriendProfiles() {
+  const { user } = await getViewerContext();
+  const { friends } = await getAcceptedFriendsForUser(user!.id);
+  return friends;
 }
 
 export async function getFriendsData(query?: string) {

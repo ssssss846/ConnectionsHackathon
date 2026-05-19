@@ -26,8 +26,14 @@ export function AppShell({ profile, children }: AppShellProps) {
             <Link href="/plans" className="hover:text-[var(--accent)]">
               Timetables
             </Link>
+            <Link href="/events" className="hover:text-[var(--accent)]">
+              Events
+            </Link>
             <Link href="/friends" className="hover:text-[var(--accent)]">
               Friends
+            </Link>
+            <Link href="/settings" className="hover:text-[var(--accent)]">
+              Settings
             </Link>
             <form action="/api/signout" method="post">
               <button
