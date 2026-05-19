@@ -31,7 +31,7 @@ function canAccessPlan(
   plan: { owner_user_id: string; friend_user_id: string | null } | null,
   userId: string,
 ): plan is { owner_user_id: string; friend_user_id: string | null } {
-  return Boolean(plan && (plan.owner_user_id === userId || plan.friend_user_id === userId));
+  return Boolean(plan && plan.owner_user_id === userId);
 }
 
 export async function signUpAction(_state: FormState, formData: FormData): Promise<FormState> {
@@ -474,7 +474,7 @@ export async function createSharedPlanAction(formData: FormData) {
     .from("shared_term_plans")
     .insert({
       owner_user_id: user!.id,
-      friend_user_id: friendId,
+      friend_user_id: null,
       term,
       title: `${term} timetable`,
       notes: "",
@@ -594,8 +594,8 @@ export async function removePlanParticipantAction(formData: FormData) {
     redirect(withMessage("/friends", "error", "You do not have access to that plan."));
   }
 
-  if (participantId === plan.owner_user_id || (plan.friend_user_id && participantId === plan.friend_user_id)) {
-    redirect(withMessage(`/plans/${planId}`, "error", "Core participants cannot be removed from this plan."));
+  if (participantId === plan.owner_user_id) {
+    redirect(withMessage(`/plans/${planId}`, "error", "The timetable owner cannot be removed."));
   }
 
   await supabase
@@ -625,7 +625,7 @@ export async function savePlannerWorkspaceAction(formData: FormData) {
   const { supabase, user } = await getViewerContext();
   const { data: plan } = await supabase
     .from("shared_term_plans")
-    .select("id, owner_user_id, friend_user_id, term")
+    .select("id, owner_user_id, friend_user_id, copied_from_plan_id, term")
     .eq("id", planId)
     .single();
 
@@ -673,6 +673,17 @@ export async function savePlannerWorkspaceAction(formData: FormData) {
     }
   }
 
+  if (!plan.copied_from_plan_id) {
+    const { error: copyError } = await supabase.rpc("sync_shared_plan_copies", {
+      source_plan_id: planId,
+    });
+
+    if (copyError) {
+      redirect(withMessage(`/plans/${planId}`, "error", copyError.message));
+    }
+  }
+
   revalidatePath(`/plans/${planId}`);
+  revalidatePath("/plans");
   redirect(withMessage(`/plans/${planId}`, "notice", "Planner saved."));
 }

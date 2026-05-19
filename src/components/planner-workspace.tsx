@@ -625,7 +625,6 @@ export function PlannerWorkspace({
                 {participants
                   .filter((participant) => !participant.is_owner)
                   .map((participant, index) => {
-                    const removable = participant.id !== plan.friend_user_id;
                     const paletteIndex = participants.findIndex((entry) => entry.id === participant.id);
 
                     return (
@@ -651,22 +650,20 @@ export function PlannerWorkspace({
                           </span>
                           {participant.full_name.split(" ")[0]}
                         </button>
-                        {removable ? (
-                          <form action={removeParticipantAction}>
-                            <input type="hidden" name="plan_id" value={plan.id} />
-                            <input type="hidden" name="participant_id" value={participant.id} />
-                            <button
-                              title={`Remove ${participant.full_name}`}
-                              className={`flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold transition ${
-                                activeTab === participant.id
-                                  ? "text-white/75 hover:bg-white/10 hover:text-white"
-                                  : "text-[var(--muted)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-strong)]"
-                              }`}
-                            >
-                              ×
-                            </button>
-                          </form>
-                        ) : null}
+                        <form action={removeParticipantAction}>
+                          <input type="hidden" name="plan_id" value={plan.id} />
+                          <input type="hidden" name="participant_id" value={participant.id} />
+                          <button
+                            title={`Remove ${participant.full_name}`}
+                            className={`flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold transition ${
+                              activeTab === participant.id
+                                ? "text-white/75 hover:bg-white/10 hover:text-white"
+                                : "text-[var(--muted)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-strong)]"
+                            }`}
+                          >
+                            ×
+                          </button>
+                        </form>
                       </div>
                     );
                   })}

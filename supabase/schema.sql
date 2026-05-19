@@ -249,6 +249,7 @@ create table if not exists public.shared_term_plans (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references public.profiles (id) on delete cascade,
   friend_user_id uuid references public.profiles (id) on delete cascade,
+  copied_from_plan_id uuid references public.shared_term_plans (id) on delete set null,
   term text not null,
   title text not null,
   notes text,
@@ -258,6 +259,10 @@ create table if not exists public.shared_term_plans (
 );
 
 alter table public.shared_term_plans alter column friend_user_id drop not null;
+alter table public.shared_term_plans add column if not exists copied_from_plan_id uuid references public.shared_term_plans (id) on delete set null;
+
+create unique index if not exists shared_term_plans_owner_copy_unique_idx
+  on public.shared_term_plans (owner_user_id, copied_from_plan_id);
 
 create table if not exists public.shared_term_plan_participants (
   id uuid primary key default gen_random_uuid(),
@@ -297,6 +302,97 @@ create unique index if not exists shared_term_plan_class_choices_common_idx
 create unique index if not exists shared_term_plan_class_choices_individual_idx
   on public.shared_term_plan_class_choices (plan_id, participant_user_id, subject_code, activity)
   where scope_type = 'individual';
+
+create or replace function public.sync_shared_plan_copies(source_plan_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  source_plan public.shared_term_plans%rowtype;
+  participant record;
+  copy_plan_id uuid;
+begin
+  select *
+  into source_plan
+  from public.shared_term_plans
+  where id = source_plan_id
+    and owner_user_id = auth.uid();
+
+  if not found then
+    raise exception 'You can only copy timetables you own.';
+  end if;
+
+  if source_plan.copied_from_plan_id is not null then
+    return;
+  end if;
+
+  for participant in
+    select distinct user_id
+    from public.shared_term_plan_participants
+    where plan_id = source_plan.id
+      and user_id <> source_plan.owner_user_id
+  loop
+    insert into public.shared_term_plans (
+      owner_user_id,
+      friend_user_id,
+      copied_from_plan_id,
+      term,
+      title,
+      notes
+    )
+    values (
+      participant.user_id,
+      null,
+      source_plan.id,
+      source_plan.term,
+      source_plan.title,
+      source_plan.notes
+    )
+    on conflict (owner_user_id, copied_from_plan_id)
+    do update
+    set
+      friend_user_id = null,
+      term = excluded.term,
+      title = excluded.title,
+      notes = excluded.notes
+    returning id into copy_plan_id;
+
+    delete from public.shared_term_plan_participants
+    where plan_id = copy_plan_id;
+
+    insert into public.shared_term_plan_participants (plan_id, user_id)
+    select copy_plan_id, user_id
+    from public.shared_term_plan_participants
+    where plan_id = source_plan.id
+    on conflict (plan_id, user_id) do nothing;
+
+    delete from public.shared_term_plan_class_choices
+    where plan_id = copy_plan_id;
+
+    insert into public.shared_term_plan_class_choices (
+      plan_id,
+      scope_type,
+      participant_user_id,
+      subject_code,
+      activity,
+      class_id
+    )
+    select
+      copy_plan_id,
+      scope_type,
+      participant_user_id,
+      subject_code,
+      activity,
+      class_id
+    from public.shared_term_plan_class_choices
+    where plan_id = source_plan.id;
+  end loop;
+end;
+$$;
+
+grant execute on function public.sync_shared_plan_copies(uuid) to authenticated;
 
 create table if not exists public.user_interests (
   user_id uuid not null references public.profiles (id) on delete cascade,
@@ -457,7 +553,7 @@ create policy "shared plans visible to participants"
 on public.shared_term_plans
 for select
 to authenticated
-using (auth.uid() = owner_user_id or auth.uid() = friend_user_id);
+using (auth.uid() = owner_user_id);
 
 drop policy if exists "shared plans insert owner" on public.shared_term_plans;
 create policy "shared plans insert owner"
@@ -471,8 +567,15 @@ create policy "shared plans update participants"
 on public.shared_term_plans
 for update
 to authenticated
-using (auth.uid() = owner_user_id or auth.uid() = friend_user_id)
-with check (auth.uid() = owner_user_id or auth.uid() = friend_user_id);
+using (auth.uid() = owner_user_id)
+with check (auth.uid() = owner_user_id);
+
+drop policy if exists "shared plans delete owner" on public.shared_term_plans;
+create policy "shared plans delete owner"
+on public.shared_term_plans
+for delete
+to authenticated
+using (auth.uid() = owner_user_id);
 
 drop policy if exists "shared plan subjects visible through plan" on public.shared_term_plan_subjects;
 create policy "shared plan subjects visible through plan"
@@ -484,7 +587,7 @@ using (
     select 1
     from public.shared_term_plans p
     where p.id = plan_id
-      and (auth.uid() = p.owner_user_id or auth.uid() = p.friend_user_id)
+      and auth.uid() = p.owner_user_id
   )
 );
 
@@ -498,7 +601,7 @@ with check (
     select 1
     from public.shared_term_plans p
     where p.id = plan_id
-      and (auth.uid() = p.owner_user_id or auth.uid() = p.friend_user_id)
+      and auth.uid() = p.owner_user_id
   )
 );
 
@@ -512,7 +615,7 @@ using (
     select 1
     from public.shared_term_plans p
     where p.id = plan_id
-      and (auth.uid() = p.owner_user_id or auth.uid() = p.friend_user_id)
+      and auth.uid() = p.owner_user_id
   )
 );
 
@@ -526,7 +629,7 @@ using (
     select 1
     from public.shared_term_plans p
     where p.id = plan_id
-      and (auth.uid() = p.owner_user_id or auth.uid() = p.friend_user_id)
+      and auth.uid() = p.owner_user_id
   )
 );
 
@@ -540,7 +643,7 @@ using (
     select 1
     from public.shared_term_plans p
     where p.id = plan_id
-      and (auth.uid() = p.owner_user_id or auth.uid() = p.friend_user_id)
+      and auth.uid() = p.owner_user_id
   )
 )
 with check (
@@ -548,7 +651,7 @@ with check (
     select 1
     from public.shared_term_plans p
     where p.id = plan_id
-      and (auth.uid() = p.owner_user_id or auth.uid() = p.friend_user_id)
+      and auth.uid() = p.owner_user_id
   )
 );
 
@@ -562,7 +665,7 @@ using (
     select 1
     from public.shared_term_plans p
     where p.id = plan_id
-      and (auth.uid() = p.owner_user_id or auth.uid() = p.friend_user_id)
+      and auth.uid() = p.owner_user_id
   )
 );
 
@@ -576,7 +679,7 @@ using (
     select 1
     from public.shared_term_plans p
     where p.id = plan_id
-      and (auth.uid() = p.owner_user_id or auth.uid() = p.friend_user_id)
+      and auth.uid() = p.owner_user_id
   )
 )
 with check (
@@ -584,7 +687,7 @@ with check (
     select 1
     from public.shared_term_plans p
     where p.id = plan_id
-      and (auth.uid() = p.owner_user_id or auth.uid() = p.friend_user_id)
+      and auth.uid() = p.owner_user_id
   )
 );
 

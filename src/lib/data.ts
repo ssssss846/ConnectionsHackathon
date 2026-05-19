@@ -440,11 +440,18 @@ export async function getFriendDetail(friendId: string) {
 
   const { data: plans } = await supabase
     .from("shared_term_plans")
-    .select("id, owner_user_id, friend_user_id, term, title, notes, created_at")
-    .or(
-      `and(owner_user_id.eq.${user!.id},friend_user_id.eq.${friendProfile.id}),and(owner_user_id.eq.${friendProfile.id},friend_user_id.eq.${user!.id})`,
-    )
+    .select("id, owner_user_id, friend_user_id, copied_from_plan_id, term, title, notes, created_at")
+    .eq("owner_user_id", user!.id)
     .order("created_at", { ascending: false });
+
+  const { data: planParticipantRows } = plans?.length
+    ? await supabase
+        .from("shared_term_plan_participants")
+        .select("plan_id, user_id")
+        .in("plan_id", plans.map((plan) => plan.id))
+        .eq("user_id", friendProfile.id)
+    : { data: [] };
+  const friendPlanIds = new Set((planParticipantRows ?? []).map((row) => row.plan_id));
 
   return {
     viewerProfile: profile!,
@@ -454,7 +461,7 @@ export async function getFriendDetail(friendId: string) {
     commonSubjects,
     friendTimetableBlocks,
     friendDegreeFriends: (friendDegreeRows ?? []) as DegreeMutual[],
-    plans: (plans ?? []) as SharedPlanRow[],
+    plans: ((plans ?? []) as SharedPlanRow[]).filter((plan) => friendPlanIds.has(plan.id)),
   };
 }
 
@@ -463,13 +470,22 @@ export async function getPlansIndexData() {
 
   const { data: plans } = await supabase
     .from("shared_term_plans")
-    .select("id, owner_user_id, friend_user_id, term, title, notes, created_at")
-    .or(`owner_user_id.eq.${user!.id},friend_user_id.eq.${user!.id}`)
+    .select("id, owner_user_id, friend_user_id, copied_from_plan_id, term, title, notes, created_at")
+    .eq("owner_user_id", user!.id)
     .order("created_at", { ascending: false });
 
   const planRows = (plans ?? []) as SharedPlanRow[];
+  const { data: participantRows } = planRows.length
+    ? await supabase
+        .from("shared_term_plan_participants")
+        .select("plan_id, user_id")
+        .in("plan_id", planRows.map((plan) => plan.id))
+    : { data: [] };
   const participantIds = [
-    ...new Set(planRows.flatMap((plan) => [plan.owner_user_id, plan.friend_user_id]).filter(Boolean)),
+    ...new Set([
+      ...planRows.flatMap((plan) => [plan.owner_user_id, plan.friend_user_id]).filter(Boolean),
+      ...(participantRows ?? []).map((row) => row.user_id),
+    ]),
   ] as string[];
   const { data: participantProfiles } = participantIds.length
     ? await supabase
@@ -479,10 +495,6 @@ export async function getPlansIndexData() {
     : { data: [] };
 
   const profilesById = new Map(((participantProfiles ?? []) as Profile[]).map((entry) => [entry.id, entry]));
-
-  const { data: participantRows } = await supabase
-    .from("shared_term_plan_participants")
-    .select("plan_id, user_id");
 
   const participantsByPlan = new Map<string, Profile[]>();
   for (const row of participantRows ?? []) {
@@ -539,7 +551,7 @@ export async function getPlannerWorkspace(planId: string) {
 
   const { data: plan } = await supabase
     .from("shared_term_plans")
-    .select("id, owner_user_id, friend_user_id, term, title, notes, created_at")
+    .select("id, owner_user_id, friend_user_id, copied_from_plan_id, term, title, notes, created_at")
     .eq("id", planId)
     .single();
 
@@ -547,7 +559,7 @@ export async function getPlannerWorkspace(planId: string) {
     redirect("/friends?error=Shared plan not found.");
   }
 
-  if (plan.owner_user_id !== user!.id && plan.friend_user_id !== user!.id) {
+  if (plan.owner_user_id !== user!.id) {
     redirect("/friends?error=You do not have access to that plan.");
   }
 

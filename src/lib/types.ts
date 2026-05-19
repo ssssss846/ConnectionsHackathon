@@ -58,6 +58,7 @@ export type SharedPlanRow = {
   id: string;
   owner_user_id: string;
   friend_user_id: string | null;
+  copied_from_plan_id?: string | null;
   term: Term;
   title: string;
   notes: string | null;
