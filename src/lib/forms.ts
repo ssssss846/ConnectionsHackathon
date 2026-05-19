@@ -1,12 +1,15 @@
 import {
+  INTEREST_OPTIONS,
   MAX_SUBJECTS_PER_TERM,
   TERMS,
   normalizeEmail,
   normalizeSubjectCode,
   normalizeZid,
+  type Interest,
   type Term,
 } from "@/lib/constants";
-import type { FormState, SubjectSelection, SubjectsByTerm } from "@/lib/types";
+import { parseTimeToMinutes } from "@/lib/timetable";
+import type { FormState, SubjectSelection, SubjectsByTerm, TimetableBlock } from "@/lib/types";
 
 type FormSuccess<T> = { data: T };
 type FormFailure = { error: FormState };
@@ -190,4 +193,118 @@ export function getCommonSubjects(
   }
 
   return common;
+}
+
+export function readSettingsFromFormData(formData: FormData): FormSuccess<{
+  interests: Interest[];
+  term: Term;
+  sourceType: "manual" | "calendar_url";
+  calendarUrl: string | null;
+  blocks: Array<Pick<TimetableBlock, "term" | "start_at" | "end_at" | "day_of_week" | "start_minutes" | "end_minutes" | "label" | "location">>;
+}> | FormFailure {
+  const interests = formData
+    .getAll("interests")
+    .map((value) => String(value))
+    .filter((value): value is Interest =>
+      (INTEREST_OPTIONS as readonly string[]).includes(value),
+    );
+  const term = String(formData.get("term") ?? "") as Term;
+  const sourceType = String(formData.get("source_type") ?? "manual");
+  const calendarUrl = String(formData.get("calendar_url") ?? "").trim() || null;
+
+  if (!TERMS.includes(term)) {
+    return { error: { error: "Choose a valid term." } };
+  }
+
+  if (sourceType !== "manual" && sourceType !== "calendar_url") {
+    return { error: { error: "Choose a valid timetable source." } };
+  }
+
+  if (sourceType === "calendar_url" && !calendarUrl) {
+    return { error: { error: "Paste your public calendar .ics link or switch to manual entry." } };
+  }
+
+  if (calendarUrl) {
+    try {
+      const parsed = new URL(calendarUrl);
+      const supportedProtocols = ["webcal:", "webcals:", "ical:", "icals:", "http:", "https:"];
+      const looksLikeCalendarFeed =
+        parsed.pathname.toLowerCase().endsWith(".ics") ||
+        parsed.href.toLowerCase().includes(".ics") ||
+        parsed.href.toLowerCase().includes("calendar") ||
+        parsed.href.toLowerCase().includes("ical");
+
+      if (!supportedProtocols.includes(parsed.protocol) || !looksLikeCalendarFeed) {
+        return {
+          error: {
+            error: "Paste a valid calendar feed URL such as webcal://...ics, icals://...ics, http://...ics, or https://...ics.",
+          },
+        };
+      }
+    } catch {
+      return { error: { error: "Paste a valid calendar link." } };
+    }
+  }
+
+  const blocks = formData
+    .getAll("timetable_blocks")
+    .map((value) => String(value))
+    .filter(Boolean)
+    .map((value) => {
+      try {
+        return JSON.parse(value) as {
+          day?: number;
+          start?: string;
+          end?: string;
+          label?: string;
+          location?: string;
+        };
+      } catch {
+        return null;
+      }
+    });
+
+  if (blocks.some((block) => block === null)) {
+    return { error: { error: "One timetable block could not be read." } };
+  }
+
+  const parsedBlocks = [];
+  for (const block of blocks) {
+    if (!block) continue;
+
+    const day = Number(block.day);
+    const startMinutes = parseTimeToMinutes(String(block.start ?? ""));
+    const endMinutes = parseTimeToMinutes(String(block.end ?? ""));
+    const label = String(block.label ?? "").trim() || "Busy";
+    const location = String(block.location ?? "").trim() || null;
+
+    if (!Number.isInteger(day) || day < 1 || day > 7 || startMinutes === null || endMinutes === null) {
+      return { error: { error: "Each timetable block needs a valid day, start time, and end time." } };
+    }
+
+    if (startMinutes >= endMinutes) {
+      return { error: { error: "Timetable block end times must be after start times." } };
+    }
+
+    parsedBlocks.push({
+      term,
+      start_at: null,
+      end_at: null,
+      day_of_week: day,
+      start_minutes: startMinutes,
+      end_minutes: endMinutes,
+      label: label.slice(0, 120),
+      location: location?.slice(0, 160) ?? null,
+    });
+  }
+
+  return {
+    data: {
+      interests: [...new Set(interests)].slice(0, 12),
+      term,
+      sourceType,
+      calendarUrl,
+      blocks: parsedBlocks,
+    },
+  };
 }

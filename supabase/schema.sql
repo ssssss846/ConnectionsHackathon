@@ -147,6 +147,53 @@ create unique index if not exists shared_term_plan_class_choices_individual_idx
   on public.shared_term_plan_class_choices (plan_id, participant_user_id, subject_code, activity)
   where scope_type = 'individual';
 
+create table if not exists public.user_interests (
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  interest text not null,
+  created_at timestamptz not null default timezone('utc', now()),
+  constraint user_interests_interest_check check (interest ~ '^[a-z0-9_ -]{2,40}$'),
+  constraint user_interests_unique unique (user_id, interest)
+);
+
+create table if not exists public.user_timetable_sources (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  term text not null,
+  source_type text not null default 'manual',
+  calendar_url text,
+  notes text,
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint user_timetable_sources_term_check check (term in ('T1', 'T2', 'T3')),
+  constraint user_timetable_sources_source_check check (source_type in ('manual', 'calendar_url', 'auto_reference')),
+  constraint user_timetable_sources_unique unique (user_id, term)
+);
+
+create table if not exists public.user_timetable_blocks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  term text not null,
+  start_at timestamptz,
+  end_at timestamptz,
+  day_of_week integer not null,
+  start_minutes integer not null,
+  end_minutes integer not null,
+  label text not null default 'Busy',
+  location text,
+  source_type text not null default 'manual',
+  created_at timestamptz not null default timezone('utc', now()),
+  constraint user_timetable_blocks_term_check check (term in ('T1', 'T2', 'T3')),
+  constraint user_timetable_blocks_day_check check (day_of_week between 1 and 7),
+  constraint user_timetable_blocks_minutes_check check (
+    start_minutes >= 0
+    and end_minutes <= 1440
+    and start_minutes < end_minutes
+  ),
+  constraint user_timetable_blocks_source_check check (source_type in ('manual', 'calendar_url', 'auto_reference'))
+);
+
+alter table public.user_timetable_blocks add column if not exists start_at timestamptz;
+alter table public.user_timetable_blocks add column if not exists end_at timestamptz;
+
 alter table public.profiles enable row level security;
 alter table public.user_term_subjects enable row level security;
 alter table public.friend_requests enable row level security;
@@ -155,6 +202,9 @@ alter table public.shared_term_plans enable row level security;
 alter table public.shared_term_plan_participants enable row level security;
 alter table public.shared_term_plan_subjects enable row level security;
 alter table public.shared_term_plan_class_choices enable row level security;
+alter table public.user_interests enable row level security;
+alter table public.user_timetable_sources enable row level security;
+alter table public.user_timetable_blocks enable row level security;
 
 drop policy if exists "profiles readable by signed in users" on public.profiles;
 create policy "profiles readable by signed in users"
@@ -379,3 +429,78 @@ with check (
       and (auth.uid() = p.owner_user_id or auth.uid() = p.friend_user_id)
   )
 );
+
+drop policy if exists "interests read self or friend" on public.user_interests;
+create policy "interests read self or friend"
+on public.user_interests
+for select
+to authenticated
+using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.friendships f
+    where (
+      f.user_a_id = least(auth.uid(), user_id)
+      and f.user_b_id = greatest(auth.uid(), user_id)
+    )
+  )
+);
+
+drop policy if exists "interests mutate self" on public.user_interests;
+create policy "interests mutate self"
+on public.user_interests
+for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "timetable sources read self or friend" on public.user_timetable_sources;
+create policy "timetable sources read self or friend"
+on public.user_timetable_sources
+for select
+to authenticated
+using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.friendships f
+    where (
+      f.user_a_id = least(auth.uid(), user_id)
+      and f.user_b_id = greatest(auth.uid(), user_id)
+    )
+  )
+);
+
+drop policy if exists "timetable sources mutate self" on public.user_timetable_sources;
+create policy "timetable sources mutate self"
+on public.user_timetable_sources
+for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "timetable blocks read self or friend" on public.user_timetable_blocks;
+create policy "timetable blocks read self or friend"
+on public.user_timetable_blocks
+for select
+to authenticated
+using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.friendships f
+    where (
+      f.user_a_id = least(auth.uid(), user_id)
+      and f.user_b_id = greatest(auth.uid(), user_id)
+    )
+  )
+);
+
+drop policy if exists "timetable blocks mutate self" on public.user_timetable_blocks;
+create policy "timetable blocks mutate self"
+on public.user_timetable_blocks
+for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
