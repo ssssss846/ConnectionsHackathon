@@ -33,7 +33,7 @@ export function AuthForm({ mode, action }: AuthFormProps) {
             <input
               id="full_name"
               name="full_name"
-              placeholder="Samuel Rubianto"
+              placeholder="John Doe"
               className="w-full rounded-2xl border border-[var(--border)] bg-white/90 px-4 py-3 outline-none transition focus:border-[var(--accent)]"
               autoComplete="name"
               required
