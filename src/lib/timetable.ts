@@ -5,12 +5,39 @@ const DAY_START = 8 * 60;
 const DAY_END = 22 * 60;
 const MIN_FREE_SLOT = 60;
 const MAX_IMPORT_EVENTS = 700;
+const DEFAULT_CALENDAR_TIME_ZONE = "Australia/Sydney";
+
+type IcsProperty = {
+  params: Record<string, string>;
+  value: string;
+};
+
+type WallDateTime = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+};
+
+type ParsedIcsDate = {
+  date: Date;
+  wall: WallDateTime;
+  timeZone: string | null;
+  isUtc: boolean;
+};
 
 type ParsedIcsEvent = {
   summary: string;
   location: string | null;
   start: Date;
   end: Date;
+  startWall: WallDateTime;
+  timeZone: string | null;
+  isUtc: boolean;
+  rrule: Record<string, string>;
+  exdates: Date[];
 };
 
 export function formatMinutes(minutes: number) {
@@ -43,16 +70,102 @@ function unfoldIcs(value: string) {
   return value.replace(/\r?\n[ \t]/g, "");
 }
 
-function getIcsValue(block: string, key: string) {
-  const line = block
-    .split(/\r?\n/)
-    .find((candidate) => candidate.startsWith(`${key}:`) || candidate.startsWith(`${key};`));
-  if (!line) return "";
-
-  return line.slice(line.indexOf(":") + 1).replace(/\\,/g, ",").replace(/\\n/g, "\n").trim();
+function unescapeIcsText(value: string) {
+  return value.replace(/\\,/g, ",").replace(/\\n/g, "\n").replace(/\\\\/g, "\\").trim();
 }
 
-function parseIcsDate(value: string) {
+function parseIcsLine(line: string, key: string): IcsProperty | null {
+  const separatorIndex = line.indexOf(":");
+  if (separatorIndex === -1) return null;
+
+  const head = line.slice(0, separatorIndex);
+  const value = line.slice(separatorIndex + 1);
+  const [name, ...paramParts] = head.split(";");
+
+  if (name.toUpperCase() !== key.toUpperCase()) return null;
+
+  const params: Record<string, string> = {};
+  for (const part of paramParts) {
+    const [paramKey, ...paramValueParts] = part.split("=");
+    if (!paramKey || !paramValueParts.length) continue;
+    params[paramKey.toUpperCase()] = paramValueParts.join("=").replace(/^"|"$/g, "");
+  }
+
+  return {
+    params,
+    value: unescapeIcsText(value),
+  };
+}
+
+function getIcsProperties(block: string, key: string) {
+  return block
+    .split(/\r?\n/)
+    .map((line) => parseIcsLine(line, key))
+    .filter((property): property is IcsProperty => Boolean(property));
+}
+
+function getIcsValue(block: string, key: string) {
+  return getIcsProperties(block, key)[0]?.value ?? "";
+}
+
+function getZonedParts(date: Date, timeZone: string): WallDateTime {
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: Number(values.get("year")),
+    month: Number(values.get("month")),
+    day: Number(values.get("day")),
+    hour: Number(values.get("hour")),
+    minute: Number(values.get("minute")),
+    second: Number(values.get("second")),
+  };
+}
+
+function getTimeZoneOffsetMs(date: Date, timeZone: string) {
+  const parts = getZonedParts(date, timeZone);
+  const utcFromParts = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+
+  return utcFromParts - date.getTime();
+}
+
+function zonedWallTimeToDate(wall: WallDateTime, timeZone: string) {
+  const utcGuess = new Date(Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute, wall.second));
+  const firstOffset = getTimeZoneOffsetMs(utcGuess, timeZone);
+  const firstDate = new Date(utcGuess.getTime() - firstOffset);
+  const secondOffset = getTimeZoneOffsetMs(firstDate, timeZone);
+
+  return new Date(utcGuess.getTime() - secondOffset);
+}
+
+function wallTimeToDate(wall: WallDateTime, timeZone: string | null, isUtc: boolean) {
+  if (isUtc) {
+    return new Date(Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute, wall.second));
+  }
+
+  return zonedWallTimeToDate(wall, timeZone ?? DEFAULT_CALENDAR_TIME_ZONE);
+}
+
+function parseIcsDateProperty(property: IcsProperty | undefined): ParsedIcsDate | null {
+  if (!property) return null;
+
+  const value = property.value;
   const normalized = value.trim();
   const match = normalized.match(
     /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/,
@@ -60,27 +173,175 @@ function parseIcsDate(value: string) {
   if (!match) return null;
 
   const [, year, month, day, hour = "00", minute = "00", second = "00", utc] = match;
-  const args = [
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    Number(second),
-  ] as const;
+  const wallDateTime: WallDateTime = {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+    second: Number(second),
+  };
+  const timeZone = utc ? null : property.params.TZID || DEFAULT_CALENDAR_TIME_ZONE;
 
-  return utc ? new Date(Date.UTC(...args)) : new Date(...args);
+  return {
+    date: wallTimeToDate(wallDateTime, timeZone, Boolean(utc)),
+    wall: wallDateTime,
+    timeZone,
+    isUtc: Boolean(utc),
+  };
+}
+
+function parseRrule(value: string) {
+  return Object.fromEntries(
+    value
+      .split(";")
+      .map((part) => part.split("="))
+      .filter(([key, ruleValue]) => key && ruleValue)
+      .map(([key, ruleValue]) => [key.toUpperCase(), ruleValue]),
+  );
+}
+
+const ICS_WEEKDAY_INDEX: Record<string, number> = {
+  MO: 1,
+  TU: 2,
+  WE: 3,
+  TH: 4,
+  FR: 5,
+  SA: 6,
+  SU: 7,
+};
+
+function getWallDateKey(wall: Pick<WallDateTime, "year" | "month" | "day">) {
+  return [
+    wall.year,
+    String(wall.month).padStart(2, "0"),
+    String(wall.day).padStart(2, "0"),
+  ].join("-");
+}
+
+function getWallDateTimeKey(wall: WallDateTime) {
+  return [
+    getWallDateKey(wall),
+    String(wall.hour).padStart(2, "0"),
+    String(wall.minute).padStart(2, "0"),
+    String(wall.second).padStart(2, "0"),
+  ].join(":");
+}
+
+function getWallDayOfWeek(wall: Pick<WallDateTime, "year" | "month" | "day">) {
+  const day = new Date(Date.UTC(wall.year, wall.month - 1, wall.day)).getUTCDay();
+  return day === 0 ? 7 : day;
+}
+
+function addWallDays(wall: WallDateTime, days: number): WallDateTime {
+  const date = new Date(Date.UTC(wall.year, wall.month - 1, wall.day + days));
+  return {
+    ...wall,
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
+
+function addWallWeeks(wall: WallDateTime, weeks: number) {
+  return addWallDays(wall, weeks * 7);
+}
+
+function parseByDays(value: string | undefined, fallbackDay: number) {
+  if (!value) return [fallbackDay];
+
+  const days = value
+    .split(",")
+    .map((entry) => entry.replace(/^[+-]?\d+/, "").toUpperCase())
+    .map((entry) => ICS_WEEKDAY_INDEX[entry])
+    .filter((day): day is number => Boolean(day));
+
+  return days.length ? [...new Set(days)].sort((left, right) => left - right) : [fallbackDay];
+}
+
+function parseExdates(block: string, fallback: ParsedIcsDate) {
+  return getIcsProperties(block, "EXDATE").flatMap((property) =>
+    property.value
+      .split(",")
+      .map((value) => {
+        const params = { ...property.params };
+        if (!params.TZID && fallback.timeZone) {
+          params.TZID = fallback.timeZone;
+        }
+
+        return parseIcsDateProperty({ params, value });
+      })
+      .filter((date): date is ParsedIcsDate => Boolean(date))
+      .map((date) => date.date),
+  );
+}
+
+function expandRecurringEvents(events: ParsedIcsEvent[], now = new Date()) {
+  const latest = new Date(now);
+  latest.setFullYear(latest.getFullYear() + 2);
+  const expanded: ParsedIcsEvent[] = [];
+
+  for (const event of events) {
+    if (event.rrule.FREQ !== "WEEKLY") {
+      expanded.push(event);
+      continue;
+    }
+
+    const interval = Math.max(1, Number(event.rrule.INTERVAL) || 1);
+    const count = event.rrule.COUNT ? Math.max(1, Number(event.rrule.COUNT) || 1) : null;
+    const until = event.rrule.UNTIL
+      ? parseIcsDateProperty({ params: {}, value: event.rrule.UNTIL })?.date
+      : null;
+    const durationMs = event.end.getTime() - event.start.getTime();
+    const startDay = getWallDayOfWeek(event.startWall);
+    const byDays = parseByDays(event.rrule.BYDAY, startDay);
+    const weekStart = addWallDays(event.startWall, 1 - startDay);
+    const exdateKeys = new Set(
+      event.exdates.map((date) =>
+        getWallDateTimeKey(event.isUtc ? getZonedParts(date, "UTC") : getZonedParts(date, event.timeZone ?? DEFAULT_CALENDAR_TIME_ZONE)),
+      ),
+    );
+    let emitted = 0;
+
+    for (let weekIndex = 0; weekIndex < 160 && (!count || emitted < count); weekIndex += interval) {
+      const currentWeekStart = addWallWeeks(weekStart, weekIndex);
+
+      for (const byDay of byDays) {
+        const occurrenceWall = addWallDays(
+          {
+            ...currentWeekStart,
+            hour: event.startWall.hour,
+            minute: event.startWall.minute,
+            second: event.startWall.second,
+          },
+          byDay - 1,
+        );
+        const start = wallTimeToDate(occurrenceWall, event.timeZone, event.isUtc);
+        if (start < event.start) continue;
+        if (until && start > until) continue;
+        if (start > latest) continue;
+        if (exdateKeys.has(getWallDateTimeKey(occurrenceWall))) continue;
+
+        expanded.push({
+          ...event,
+          start,
+          end: new Date(start.getTime() + durationMs),
+          startWall: occurrenceWall,
+          rrule: {},
+          exdates: [],
+        });
+        emitted += 1;
+        if (count && emitted >= count) break;
+      }
+    }
+  }
+
+  return expanded;
 }
 
 function startOfDay(date: Date) {
   const next = new Date(date);
   next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function addCalendarDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
   return next;
 }
 
@@ -92,21 +353,82 @@ function isImportableEvent(event: ParsedIcsEvent, now = new Date()) {
   return event.end >= earliest && event.start <= latest;
 }
 
+function compareWallDates(left: Pick<WallDateTime, "year" | "month" | "day">, right: Pick<WallDateTime, "year" | "month" | "day">) {
+  return getWallDateKey(left).localeCompare(getWallDateKey(right));
+}
+
+function getEventEndWall(event: ParsedIcsEvent) {
+  return event.isUtc
+    ? getZonedParts(event.end, "UTC")
+    : getZonedParts(event.end, event.timeZone ?? DEFAULT_CALENDAR_TIME_ZONE);
+}
+
+function buildBlocksForCalendarEvent(event: ParsedIcsEvent, userId: string): Omit<TimetableBlock, "id">[] {
+  const blocks: Omit<TimetableBlock, "id">[] = [];
+  const endWall = getEventEndWall(event);
+
+  for (
+    let cursor = { ...event.startWall, hour: 0, minute: 0, second: 0 };
+    compareWallDates(cursor, endWall) <= 0;
+    cursor = addWallDays(cursor, 1)
+  ) {
+    const isStartDate = getWallDateKey(cursor) === getWallDateKey(event.startWall);
+    const isEndDate = getWallDateKey(cursor) === getWallDateKey(endWall);
+    const segmentStartWall = isStartDate ? event.startWall : cursor;
+    const segmentEndWall = isEndDate ? endWall : { ...addWallDays(cursor, 1), hour: 0, minute: 0, second: 0 };
+    const startMinutes = segmentStartWall.hour * 60 + segmentStartWall.minute;
+    const endMinutes =
+      !isEndDate && segmentEndWall.hour === 0 && segmentEndWall.minute === 0
+        ? 24 * 60
+        : segmentEndWall.hour * 60 + segmentEndWall.minute;
+
+    if (startMinutes >= endMinutes) continue;
+
+    const segmentStart = isStartDate
+      ? event.start
+      : wallTimeToDate(segmentStartWall, event.timeZone, event.isUtc);
+    const segmentEnd = isEndDate
+      ? event.end
+      : wallTimeToDate(segmentEndWall, event.timeZone, event.isUtc);
+    const dayOfWeek = getWallDayOfWeek(segmentStartWall);
+
+    blocks.push({
+      user_id: userId,
+      term: getTermForDate(new Date(segmentStartWall.year, segmentStartWall.month - 1, segmentStartWall.day)),
+      start_at: segmentStart.toISOString(),
+      end_at: segmentEnd.toISOString(),
+      day_of_week: dayOfWeek,
+      start_minutes: startMinutes,
+      end_minutes: endMinutes,
+      label: event.summary.slice(0, 120),
+      location: event.location?.slice(0, 160) ?? null,
+      source_type: "calendar_url" as const,
+    });
+  }
+
+  return blocks;
+}
+
 export function parseCalendarEvents(icsText: string): ParsedIcsEvent[] {
   const unfolded = unfoldIcs(icsText);
   const blocks = unfolded.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g) ?? [];
 
   return blocks
     .map((block) => {
-      const start = parseIcsDate(getIcsValue(block, "DTSTART"));
-      const end = parseIcsDate(getIcsValue(block, "DTEND"));
-      if (!start || !end || start >= end) return null;
+      const start = parseIcsDateProperty(getIcsProperties(block, "DTSTART")[0]);
+      const end = parseIcsDateProperty(getIcsProperties(block, "DTEND")[0]);
+      if (!start || !end || start.date >= end.date) return null;
 
       return {
         summary: getIcsValue(block, "SUMMARY") || "Calendar busy time",
         location: getIcsValue(block, "LOCATION") || null,
-        start,
-        end,
+        start: start.date,
+        end: end.date,
+        startWall: start.wall,
+        timeZone: start.timeZone,
+        isUtc: start.isUtc,
+        rrule: parseRrule(getIcsValue(block, "RRULE")),
+        exdates: parseExdates(block, start),
       };
     })
     .filter((event): event is ParsedIcsEvent => Boolean(event));
@@ -206,43 +528,17 @@ export async function fetchBlocksFromCalendarUrl({
     throw new Error(lastError || "Could not read that calendar link.");
   }
 
-  const events = parseCalendarEvents(text).filter((event) => isImportableEvent(event));
+  const events = expandRecurringEvents(parseCalendarEvents(text))
+    .filter((event) => isImportableEvent(event))
+    .slice(0, MAX_IMPORT_EVENTS);
   if (!events.length) {
     throw new Error("That calendar feed did not contain any current or upcoming importable events.");
   }
 
   const unique = new Map<string, Omit<TimetableBlock, "id">>();
 
-  for (const event of events.slice(0, MAX_IMPORT_EVENTS)) {
-    const firstDay = startOfDay(event.start);
-    const lastDay = startOfDay(event.end);
-
-    for (let cursor = firstDay; cursor <= lastDay; cursor = addCalendarDays(cursor, 1)) {
-      const nextDay = addCalendarDays(cursor, 1);
-      const segmentStart = event.start > cursor ? event.start : cursor;
-      const segmentEnd = event.end < nextDay ? event.end : nextDay;
-      const startMinutes = segmentStart.getHours() * 60 + segmentStart.getMinutes();
-      const endMinutes =
-        isSameDay(segmentEnd, nextDay) && segmentEnd.getHours() === 0 && segmentEnd.getMinutes() === 0
-          ? 24 * 60
-          : segmentEnd.getHours() * 60 + segmentEnd.getMinutes();
-
-      if (startMinutes >= endMinutes) continue;
-
-      const dayOfWeek = segmentStart.getDay() === 0 ? 7 : segmentStart.getDay();
-      const block = {
-        user_id: userId,
-        term: getTermForDate(segmentStart),
-        start_at: segmentStart.toISOString(),
-        end_at: segmentEnd.toISOString(),
-        day_of_week: dayOfWeek,
-        start_minutes: startMinutes,
-        end_minutes: endMinutes,
-        label: event.summary.slice(0, 120),
-        location: event.location?.slice(0, 160) ?? null,
-        source_type: "calendar_url" as const,
-      };
-
+  for (const event of events) {
+    for (const block of buildBlocksForCalendarEvent(event, userId)) {
       unique.set(
         [block.start_at, block.end_at, block.label, block.location ?? ""].join(":"),
         block,
