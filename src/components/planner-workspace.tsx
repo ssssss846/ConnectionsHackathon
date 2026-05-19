@@ -72,6 +72,10 @@ function getChoiceKey(choice: Pick<PlannerChoice, "scopeType" | "participantUser
   return [choice.scopeType, choice.participantUserId ?? "all", choice.subjectCode, choice.activity].join(":");
 }
 
+function uniquePlannerChoices(choices: PlannerChoice[]) {
+  return [...new Map(choices.map((choice) => [getChoiceKey(choice), choice])).values()];
+}
+
 function getInitials(name: string) {
   return name
     .split(/\s+/)
@@ -104,6 +108,7 @@ export function PlannerWorkspace({
   const [dragging, setDragging] = useState<DragChoice | null>(null);
   const [participantSearch, setParticipantSearch] = useState("");
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [closingToastIds, setClosingToastIds] = useState<number[]>([]);
   const nextToastId = useRef(1);
   const seededMessages = useRef(false);
 
@@ -189,7 +194,11 @@ export function PlannerWorkspace({
   }, [activeTab, commonSubjects, selectedOptionEntries]);
 
   const dismissToast = useCallback((id: number) => {
-    setToasts((current) => current.filter((toast) => toast.id !== id));
+    setClosingToastIds((current) => (current.includes(id) ? current : [...current, id]));
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+      setClosingToastIds((current) => current.filter((toastId) => toastId !== id));
+    }, 220);
   }, []);
 
   const pushToast = useCallback((tone: "success" | "error" | "info", message: string) => {
@@ -439,19 +448,21 @@ export function PlannerWorkspace({
 
     const solvedAll = backtrack(tasks, []);
 
-    if (!best.choices.length) {
+    const uniqueBestChoices = uniquePlannerChoices(best.choices);
+
+    if (!uniqueBestChoices.length) {
       pushToast("error", "Could not find any clash-free class selections for this plan.");
       return;
     }
 
-    applyChoices(() => best.choices);
+    applyChoices(() => uniqueBestChoices);
     pushToast(
       solvedAll ? "success" : "info",
       solvedAll
         ? "Auto-generated a clash-free timetable."
         : timedOut
-          ? `Auto-generated ${best.choices.length} of ${tasks.length} activity selections before timing out. The rest still need manual choices.`
-          : `Auto-generated ${best.choices.length} of ${tasks.length} activity selections. The rest still need manual choices.`,
+          ? `Auto-generated ${uniqueBestChoices.length} of ${tasks.length} activity selections before timing out. The rest still need manual choices.`
+          : `Auto-generated ${uniqueBestChoices.length} of ${tasks.length} activity selections. The rest still need manual choices.`,
     );
   }
 
@@ -537,11 +548,12 @@ export function PlannerWorkspace({
                 : toast.tone === "success"
                   ? "border-[var(--accent)]/20 bg-[var(--accent-soft)] text-[var(--accent-strong)]"
                   : "border-[var(--border)] bg-white/95 text-[var(--foreground)]";
+            const isClosing = closingToastIds.includes(toast.id);
 
             return (
               <div
                 key={toast.id}
-                className={`pointer-events-auto flex items-start justify-between gap-4 rounded-2xl border px-4 py-3 text-sm shadow-[var(--shadow)] backdrop-blur-sm ${toneClasses}`}
+                className={`toast-message pointer-events-auto flex items-start justify-between gap-4 rounded-2xl border px-4 py-3 text-sm shadow-[var(--shadow)] backdrop-blur-sm ${isClosing ? "toast-message-out" : "toast-message-in"} ${toneClasses}`}
               >
                 <p>{toast.message}</p>
                 <button
@@ -816,16 +828,16 @@ export function PlannerWorkspace({
                         return (
                           <div
                             key={`${choice.scopeType}-${choice.subjectCode}-${choice.activity}-${time.timeId}`}
-                            className={`absolute left-1 right-1 rounded-xl border px-2 py-1 shadow-sm ${colorClass}`}
+                            className={`absolute left-1 right-1 overflow-hidden rounded-xl border px-2 py-1 shadow-sm ${colorClass}`}
                             style={{
                               top: (time.startMinutes - START_MINUTES) * PIXELS_PER_MINUTE,
                               height: (time.endMinutes - time.startMinutes) * PIXELS_PER_MINUTE,
                             }}
                           >
-                            <p className="text-[11px] font-bold leading-4">{choice.subjectCode}</p>
-                            <p className="text-[10px] leading-4">{choice.activity}</p>
-                            <p className="text-[10px] leading-4">{classOption.section}</p>
-                            <p className="mt-1 text-[9px] leading-3">
+                            <p className="truncate text-[11px] font-bold leading-4">{choice.subjectCode}</p>
+                            <p className="truncate text-[10px] leading-4">{choice.activity}</p>
+                            <p className="truncate text-[10px] leading-4">{classOption.section}</p>
+                            <p className="mt-1 truncate whitespace-nowrap text-[9px] leading-3">
                               {choice.scopeType === "common"
                                 ? commonGroup?.participants.map((entry) => getInitials(entry.full_name)).join(" · ")
                                 : participant

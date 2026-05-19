@@ -1,11 +1,8 @@
 import Link from "next/link";
 
 import { APP_NAME, TERMS, TERM_LABELS } from "@/lib/constants";
-import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export default function HomePage() {
-  const configured = isSupabaseConfigured();
-
   return (
     <div className="app-shell">
       <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-5 py-12 sm:px-8">
@@ -39,12 +36,6 @@ export default function HomePage() {
               </Link>
             </div>
 
-            {!configured ? (
-              <div className="rounded-[28px] border border-[var(--warning)]/30 bg-white/85 p-5 text-sm text-[var(--foreground)] shadow-[var(--shadow)]">
-                Add your Supabase project values to <code>.env.local</code> before using auth and
-                data features.
-              </div>
-            ) : null}
           </div>
 
           <section className="rounded-[32px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)] backdrop-blur-sm">

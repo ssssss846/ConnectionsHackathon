@@ -20,6 +20,10 @@ function withMessage(path: string, key: "notice" | "error", message: string) {
   return `${url.pathname}?${url.searchParams.toString()}`;
 }
 
+function getPlannerChoiceKey(choice: Pick<PlannerChoice, "scopeType" | "participantUserId" | "subjectCode" | "activity">) {
+  return [choice.scopeType, choice.participantUserId ?? "all", choice.subjectCode, choice.activity].join(":");
+}
+
 export async function signUpAction(_state: FormState, formData: FormData): Promise<FormState> {
   const parsed = readSignUpDetails(formData);
   if ("error" in parsed) return parsed.error;
@@ -373,11 +377,13 @@ export async function savePlannerWorkspaceAction(formData: FormData) {
     redirect(withMessage(`/plans/${planId}`, "error", "Could not read the planner changes."));
   }
 
+  const uniqueChoices = [...new Map(choices.map((choice) => [getPlannerChoiceKey(choice), choice])).values()];
+
   await supabase.from("shared_term_plan_class_choices").delete().eq("plan_id", planId);
 
-  if (choices.length) {
+  if (uniqueChoices.length) {
     const { error: insertError } = await supabase.from("shared_term_plan_class_choices").insert(
-      choices.map((choice) => ({
+      uniqueChoices.map((choice) => ({
         plan_id: planId,
         scope_type: choice.scopeType,
         participant_user_id: choice.participantUserId,
