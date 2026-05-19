@@ -9,7 +9,7 @@ type AppShellProps = {
 };
 
 export function AppShell({ profile, children }: AppShellProps) {
-  const displayName = profile?.full_name?.trim() || profile?.username?.trim() || "account";
+  const displayName = profile?.full_name?.trim() || profile?.username?.trim();
 
   return (
     <div className="app-shell">
@@ -42,7 +42,7 @@ export function AppShell({ profile, children }: AppShellProps) {
                 type="submit"
                 className="rounded-full border border-[var(--border)] px-4 py-2 transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
               >
-                Log out {displayName}
+                {displayName ? `Log out ${displayName}` : "Log out"}
               </button>
             </form>
           </nav>

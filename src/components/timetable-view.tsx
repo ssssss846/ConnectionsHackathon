@@ -114,7 +114,6 @@ function getBlockId(block: TimetableBlock) {
 
 function getEventCardHref(block: TimetableBlock) {
   if (block.source_type !== "auto_reference" || !block.id) return null;
-  if (block.id.startsWith("registered-")) return null;
   const eventId = block.id.replace(/^(rubric|suggested|registered)-/, "");
   return eventId ? `#event-${eventId}` : null;
 }

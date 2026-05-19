@@ -25,6 +25,7 @@ import type {
 } from "@/lib/types";
 
 const PROFILE_SELECT = "id, username, full_name, zid, unsw_email, degree, enrolled_year, enrolled_term, created_at";
+type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 
 function getEmailUsername(email: string | undefined) {
   return String(email ?? "")
@@ -126,8 +127,8 @@ export async function getViewerContext(redirectOnMissing = true) {
   };
 }
 
-export async function getUserSubjects(userId: string) {
-  const { supabase } = await getViewerContext(false);
+export async function getUserSubjects(userId: string, supabaseClient?: SupabaseServerClient) {
+  const supabase = supabaseClient ?? (await getViewerContext(false)).supabase;
   const { data } = await supabase
     .from("user_term_subjects")
     .select("id, user_id, term, subject_code, subject_name")
@@ -138,8 +139,8 @@ export async function getUserSubjects(userId: string) {
   return (data ?? []) as SubjectRow[];
 }
 
-async function getAcceptedFriendsForUser(userId: string) {
-  const { supabase } = await getViewerContext(false);
+async function getAcceptedFriendsForUser(userId: string, supabaseClient?: SupabaseServerClient) {
+  const supabase = supabaseClient ?? (await getViewerContext(false)).supabase;
   const { data: friendshipRows } = await supabase
     .from("friendships")
     .select("id, user_a_id, user_b_id, created_at")
@@ -166,12 +167,11 @@ async function getAcceptedFriendsForUser(userId: string) {
 }
 
 export async function getDashboardData() {
-  const { user, profile } = await getViewerContext();
-  const subjects = await getUserSubjects(user!.id);
+  const { supabase, user, profile } = await getViewerContext();
+  const subjects = await getUserSubjects(user!.id, supabase);
   const subjectsByTerm = groupSubjectsByTerm(subjects);
   const currentTerm = getCurrentTerm();
 
-  const { supabase } = await getViewerContext(false);
   const { data: friendshipRows } = await supabase
     .from("friendships")
     .select("id, user_a_id, user_b_id")
@@ -191,10 +191,23 @@ export async function getDashboardData() {
     : [];
 
   const friendsById = new Map(friendProfiles.map((friend) => [friend.id, friend as Profile]));
-  const friendSubjects = await Promise.all(friendIds.map((friendId) => getUserSubjects(friendId)));
+  const { data: friendSubjectRows } = friendIds.length
+    ? await supabase
+        .from("user_term_subjects")
+        .select("id, user_id, term, subject_code, subject_name")
+        .in("user_id", friendIds)
+        .order("term")
+        .order("subject_code")
+    : { data: [] };
+  const friendSubjectsByUser = new Map<string, SubjectRow[]>();
+  for (const row of (friendSubjectRows ?? []) as SubjectRow[]) {
+    const current = friendSubjectsByUser.get(row.user_id) ?? [];
+    current.push(row);
+    friendSubjectsByUser.set(row.user_id, current);
+  }
   const sharedFriendsBySubject = new Map<string, SharedFriendMarker[]>();
 
-  for (const rows of friendSubjects) {
+  for (const rows of friendSubjectsByUser.values()) {
     if (!rows.length) continue;
     const friendId = rows[0]?.user_id;
     const friend = friendId ? friendsById.get(friendId) : null;
@@ -216,7 +229,7 @@ export async function getDashboardData() {
     }
   }
 
-  const timetableBlocks = (await getUserTimetableBlocksForTerms(user!.id)).filter(
+  const timetableBlocks = (await getUserTimetableBlocksForTerms(user!.id, [...TERMS], supabase)).filter(
     (block) => block.start_at || block.term === currentTerm,
   );
 
@@ -231,8 +244,8 @@ export async function getDashboardData() {
   };
 }
 
-export async function getUserInterests(userId: string) {
-  const { supabase } = await getViewerContext(false);
+export async function getUserInterests(userId: string, supabaseClient?: SupabaseServerClient) {
+  const supabase = supabaseClient ?? (await getViewerContext(false)).supabase;
   const { data } = await supabase
     .from("user_interests")
     .select("user_id, interest")
@@ -242,12 +255,16 @@ export async function getUserInterests(userId: string) {
   return (data ?? []) as UserInterestRow[];
 }
 
-export async function getUserTimetableBlocks(userId: string, term: Term) {
-  return getUserTimetableBlocksForTerms(userId, [term]);
+export async function getUserTimetableBlocks(userId: string, term: Term, supabaseClient?: SupabaseServerClient) {
+  return getUserTimetableBlocksForTerms(userId, [term], supabaseClient);
 }
 
-export async function getUserTimetableBlocksForTerms(userId: string, terms: Term[] = [...TERMS]) {
-  const { supabase } = await getViewerContext(false);
+export async function getUserTimetableBlocksForTerms(
+  userId: string,
+  terms: Term[] = [...TERMS],
+  supabaseClient?: SupabaseServerClient,
+) {
+  const supabase = supabaseClient ?? (await getViewerContext(false)).supabase;
   const { data } = await supabase
     .from("user_timetable_blocks")
     .select("*")
@@ -264,8 +281,8 @@ export async function getUserTimetableBlocksForTerms(userId: string, terms: Term
   });
 }
 
-export async function getUserTimetableSource(userId: string, term: Term) {
-  const { supabase } = await getViewerContext(false);
+export async function getUserTimetableSource(userId: string, term: Term, supabaseClient?: SupabaseServerClient) {
+  const supabase = supabaseClient ?? (await getViewerContext(false)).supabase;
   const { data } = await supabase
     .from("user_timetable_sources")
     .select("id, user_id, term, source_type, calendar_url, notes, updated_at")
@@ -277,13 +294,13 @@ export async function getUserTimetableSource(userId: string, term: Term) {
 }
 
 export async function getSettingsData() {
-  const { user, profile } = await getViewerContext();
+  const { supabase, user, profile } = await getViewerContext();
   const currentTerm = getCurrentTerm();
   const [subjectRows, interests, timetableSource, timetableBlocks] = await Promise.all([
-    getUserSubjects(user!.id),
-    getUserInterests(user!.id),
-    getUserTimetableSource(user!.id, currentTerm),
-    getUserTimetableBlocks(user!.id, currentTerm),
+    getUserSubjects(user!.id, supabase),
+    getUserInterests(user!.id, supabase),
+    getUserTimetableSource(user!.id, currentTerm, supabase),
+    getUserTimetableBlocks(user!.id, currentTerm, supabase),
   ]);
 
   return {
@@ -297,16 +314,18 @@ export async function getSettingsData() {
   };
 }
 
-export async function getAcceptedFriendProfiles() {
-  const { user } = await getViewerContext();
-  const { friends } = await getAcceptedFriendsForUser(user!.id);
+export async function getAcceptedFriendProfiles(supabaseClient?: SupabaseServerClient, userId?: string) {
+  const context = userId && supabaseClient ? null : await getViewerContext();
+  const supabase = supabaseClient ?? context!.supabase;
+  const viewerId = userId ?? context!.user!.id;
+  const { friends } = await getAcceptedFriendsForUser(viewerId, supabase);
   return friends;
 }
 
 export async function getFriendsData(query?: string) {
   const { supabase, user, profile } = await getViewerContext();
   const currentUserId = user!.id;
-  const { friendIds, friends, friendshipRows } = await getAcceptedFriendsForUser(currentUserId);
+  const { friendIds, friends, friendshipRows } = await getAcceptedFriendsForUser(currentUserId, supabase);
 
   const { data: incoming } = await supabase
     .from("friend_requests")
@@ -352,26 +371,40 @@ export async function getFriendsData(query?: string) {
     }
   }
 
-  const viewerSubjects = await getUserSubjects(currentUserId);
+  const allSubjectUserIds = [currentUserId, ...friendIds];
+  const { data: allSubjectRows } = allSubjectUserIds.length
+    ? await supabase
+        .from("user_term_subjects")
+        .select("id, user_id, term, subject_code, subject_name")
+        .in("user_id", allSubjectUserIds)
+        .order("term")
+        .order("subject_code")
+    : { data: [] };
+  const subjectsByUser = new Map<string, SubjectRow[]>();
+  for (const row of (allSubjectRows ?? []) as SubjectRow[]) {
+    const current = subjectsByUser.get(row.user_id) ?? [];
+    current.push(row);
+    subjectsByUser.set(row.user_id, current);
+  }
+
+  const viewerSubjects = subjectsByUser.get(currentUserId) ?? [];
   const viewerByTerm = groupSubjectsByTerm(viewerSubjects);
 
-  const sharedSubjectsByFriend = await Promise.all(
-    friends.map(async (friend) => {
-      const friendSubjects = await getUserSubjects(friend.id);
-      const commonSubjects = getCommonSubjects(viewerByTerm, groupSubjectsByTerm(friendSubjects));
-      const shared = TERMS.flatMap((term) =>
-        commonSubjects[term].map((subject) => ({
-          term,
-          ...subject,
-        })),
-      );
+  const sharedSubjectsByFriend = friends.map((friend) => {
+    const friendSubjects = subjectsByUser.get(friend.id) ?? [];
+    const commonSubjects = getCommonSubjects(viewerByTerm, groupSubjectsByTerm(friendSubjects));
+    const shared = TERMS.flatMap((term) =>
+      commonSubjects[term].map((subject) => ({
+        term,
+        ...subject,
+      })),
+    );
 
-      return {
-        friend,
-        shared,
-      };
-    }),
-  );
+    return {
+      friend,
+      shared,
+    };
+  });
   const sameDegreeFriends =
     profile?.degree
       ? friends.filter((friend) => friend.degree && friend.degree === profile.degree)
@@ -424,9 +457,9 @@ export async function getFriendDetail(friendId: string) {
   }
 
   const [mySubjects, friendSubjects, friendTimetableBlocks, { data: friendDegreeRows }] = await Promise.all([
-    getUserSubjects(user!.id),
-    getUserSubjects(friendProfile.id),
-    getUserTimetableBlocksForTerms(friendProfile.id),
+    getUserSubjects(user!.id, supabase),
+    getUserSubjects(friendProfile.id, supabase),
+    getUserTimetableBlocksForTerms(friendProfile.id, [...TERMS], supabase),
     profile?.degree
       ? supabase.rpc("discover_friend_same_degree_friends", {
           target_friend_id: friendProfile.id,
@@ -591,8 +624,15 @@ export async function getPlannerWorkspace(planId: string) {
         .from("profiles")
         .select(PROFILE_SELECT)
         .in("id", participantIds),
-      getAcceptedFriendsForUser(user!.id),
-      Promise.all(participantIds.map((participantId) => getUserSubjects(participantId))),
+      getAcceptedFriendsForUser(user!.id, supabase),
+      participantIds.length
+        ? supabase
+            .from("user_term_subjects")
+            .select("id, user_id, term, subject_code, subject_name")
+            .in("user_id", participantIds)
+            .order("term")
+            .order("subject_code")
+        : Promise.resolve({ data: [] }),
       supabase
         .from("shared_term_plan_class_choices")
         .select("scope_type, participant_user_id, subject_code, activity, class_id")
@@ -608,8 +648,15 @@ export async function getPlannerWorkspace(planId: string) {
       left.id === plan.owner_user_id ? -1 : right.id === plan.owner_user_id ? 1 : left.full_name.localeCompare(right.full_name),
     );
 
+  const participantSubjectsByUser = new Map<string, SubjectRow[]>();
+  for (const row of (participantSubjectRows.data ?? []) as SubjectRow[]) {
+    const current = participantSubjectsByUser.get(row.user_id) ?? [];
+    current.push(row);
+    participantSubjectsByUser.set(row.user_id, current);
+  }
+
   const subjectsByParticipant = new Map<string, SubjectSelection[]>();
-  for (const rows of participantSubjectRows) {
+  for (const rows of participantSubjectsByUser.values()) {
     if (!rows.length) continue;
     const participantId = rows[0].user_id;
     subjectsByParticipant.set(

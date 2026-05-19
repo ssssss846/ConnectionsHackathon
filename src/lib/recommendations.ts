@@ -1,13 +1,11 @@
-import { getCurrentTerm, getTermForDate, type Interest } from "@/lib/constants";
+import { getCurrentTerm, getTermForDate, TERMS, type Interest } from "@/lib/constants";
 import {
   getAcceptedFriendProfiles,
-  getUserInterests,
-  getUserTimetableBlocksForTerms,
   getViewerContext,
 } from "@/lib/data";
 import { fetchRubricEvents, type RubricEvent } from "@/lib/rubric-events";
 import { computeSharedFreeSlotsForDateRange, eventFitsFreeSlot } from "@/lib/timetable";
-import type { FreeTimeSlot, Profile, RegisteredEvent, TimetableBlock } from "@/lib/types";
+import type { FreeTimeSlot, Profile, RegisteredEvent, TimetableBlock, UserInterestRow } from "@/lib/types";
 
 const INTEREST_KEYWORDS: Record<Interest, string[]> = {
   sports: ["sport", "competition", "tennis", "golf", "cycling", "ride", "quadball", "horse", "archery"],
@@ -110,30 +108,84 @@ function registeredEventToRubricEvent(event: RegisteredEvent): Pick<RubricEvent,
   };
 }
 
+function registeredEventToRecommendation(event: RegisteredEvent): EventRecommendation {
+  return {
+    id: event.event_id,
+    title: event.title,
+    clubName: event.club_name ?? "UNSW club",
+    category: event.category ?? "Registered event",
+    price: "See Rubric",
+    startsAt: event.starts_at,
+    endsAt: event.ends_at,
+    timeLabel: event.time_label ?? "",
+    location: event.location ?? "See event details",
+    description: "",
+    imageUrl: "",
+    clubLogoUrl: "",
+    url: event.url ?? "#",
+    matchedInterests: [],
+    isRegistered: true,
+  };
+}
+
 export async function getEventRecommendationsData(selectedFriendIds: string[]): Promise<RecommendationsData> {
   const currentTerm = getCurrentTerm();
   const { supabase, user } = await getViewerContext();
-  const friends = await getAcceptedFriendProfiles();
+  const friends = await getAcceptedFriendProfiles(supabase, user!.id);
   const acceptedFriendIds = new Set(friends.map((friend) => friend.id));
   const cleanFriendIds = [...new Set(selectedFriendIds)].filter((id) => acceptedFriendIds.has(id));
   const selectedFriends = friends.filter((friend) => cleanFriendIds.includes(friend.id));
   const participantIds = [user!.id, ...cleanFriendIds];
 
-  const [interestGroups, timetableBlockGroups, { data: registeredRows }] = await Promise.all([
-    Promise.all(
-      participantIds.map(async (participantId) =>
-        (await getUserInterests(participantId)).map((row) => row.interest),
-      ),
-    ),
-    Promise.all(participantIds.map((participantId) => getUserTimetableBlocksForTerms(participantId))),
+  const [{ data: interestRows }, { data: timetableRows }, { data: registeredRows }] = await Promise.all([
+    supabase
+      .from("user_interests")
+      .select("user_id, interest")
+      .in("user_id", participantIds)
+      .order("interest"),
+    supabase
+      .from("user_timetable_blocks")
+      .select("*")
+      .in("user_id", participantIds)
+      .in("term", [...TERMS])
+      .order("day_of_week")
+      .order("start_minutes"),
     supabase
       .from("registered_events")
       .select("id, user_id, event_id, title, club_name, category, starts_at, ends_at, time_label, location, url, created_at")
       .eq("user_id", user!.id),
   ]);
+  const interestsByUser = new Map<string, Interest[]>();
+  for (const row of (interestRows ?? []) as UserInterestRow[]) {
+    const current = interestsByUser.get(row.user_id) ?? [];
+    current.push(row.interest);
+    interestsByUser.set(row.user_id, current);
+  }
+  const interestGroups = participantIds.map((participantId) => interestsByUser.get(participantId) ?? []);
+
+  const currentYearStart = new Date(new Date().getFullYear(), 0, 1);
+  const timetableRowsByUser = new Map<string, TimetableBlock[]>();
+  for (const block of (timetableRows ?? []) as TimetableBlock[]) {
+    if (block.end_at) {
+      const endDate = new Date(block.end_at);
+      if (!Number.isNaN(endDate.getTime()) && endDate < currentYearStart) continue;
+    }
+
+    const current = timetableRowsByUser.get(block.user_id) ?? [];
+    current.push(block);
+    timetableRowsByUser.set(block.user_id, current);
+  }
   const registeredEvents = (registeredRows ?? []) as RegisteredEvent[];
   const registeredEventIds = registeredEvents.map((event) => event.event_id);
   const registeredEventIdSet = new Set(registeredEventIds);
+  const registeredCalendarBlocks = registeredEvents
+    .map((event) => eventToCalendarBlock(registeredEventToRubricEvent(event), user!.id, currentTerm, "registered"))
+    .filter((block): block is TimetableBlock => Boolean(block));
+  const timetableBlockGroups = participantIds.map((participantId) => timetableRowsByUser.get(participantId) ?? []);
+  const busyBlockGroups = participantIds.map((participantId, index) => [
+    ...(timetableRowsByUser.get(participantId) ?? []),
+    ...(index === 0 ? registeredCalendarBlocks : []),
+  ]);
 
   const sharedInterests = intersectInterests(interestGroups);
   const interestUnion = [...new Set(interestGroups.flat())];
@@ -147,26 +199,41 @@ export async function getEventRecommendationsData(selectedFriendIds: string[]): 
     return Number.isNaN(parsed.getTime()) || parsed <= latest ? latest : parsed;
   }, new Date(now.getTime() + 1000 * 60 * 60 * 24 * 90));
   const sharedFreeSlots = computeSharedFreeSlotsForDateRange({
-    blockGroups: timetableBlockGroups,
+    blockGroups: busyBlockGroups,
     startDate: now,
     endDate: latestEventDate,
   });
 
-  const recommendations = events
+  const sortedRecommendations = events
     .map((event) => ({
       ...event,
       matchedInterests: getMatchedInterests(event, preferredInterests),
       isRegistered: registeredEventIdSet.has(event.id),
     }))
-    .filter((event) => eventFitsFreeSlot({ startsAt: event.startsAt, endsAt: event.endsAt, slots: sharedFreeSlots }))
+    .filter((event) =>
+      event.isRegistered || eventFitsFreeSlot({ startsAt: event.startsAt, endsAt: event.endsAt, slots: sharedFreeSlots }),
+    )
     .sort((left, right) => {
       if (left.matchedInterests.length !== right.matchedInterests.length) {
         return right.matchedInterests.length - left.matchedInterests.length;
       }
 
       return new Date(left.startsAt ?? 0).getTime() - new Date(right.startsAt ?? 0).getTime();
-    })
-    .slice(0, 12);
+    });
+  const registeredRecommendations = sortedRecommendations.filter((event) => event.isRegistered);
+  const suggestedRecommendations = sortedRecommendations.filter((event) => !event.isRegistered).slice(0, 12);
+  const recommendedEventIds = new Set(sortedRecommendations.map((event) => event.id));
+  const registeredOnlyRecommendations = registeredEvents
+    .filter((event) => !recommendedEventIds.has(event.event_id))
+    .map(registeredEventToRecommendation);
+  const recommendations = [
+    ...registeredRecommendations,
+    ...suggestedRecommendations,
+    ...registeredOnlyRecommendations,
+  ].sort(
+    (left, right) =>
+      new Date(left.startsAt ?? 0).getTime() - new Date(right.startsAt ?? 0).getTime(),
+  );
   const calendarBlocks = [
     ...timetableBlockGroups.flat(),
     ...recommendations
@@ -179,10 +246,9 @@ export async function getEventRecommendationsData(selectedFriendIds: string[]): 
         ),
       )
       .filter((block): block is TimetableBlock => Boolean(block)),
-    ...registeredEvents
-      .filter((event) => !recommendations.some((recommendation) => recommendation.id === event.event_id))
-      .map((event) => eventToCalendarBlock(registeredEventToRubricEvent(event), user!.id, currentTerm, "registered"))
-      .filter((block): block is TimetableBlock => Boolean(block)),
+    ...registeredCalendarBlocks.filter(
+      (block) => !recommendations.some((recommendation) => block.id === `registered-${recommendation.id}`),
+    ),
   ];
 
   const setupWarnings = [];

@@ -3,6 +3,7 @@ const RUBRIC_EVENT_DETAILS_ENDPOINT =
   "https://appserver.getqpay.com:9090/AppServerSwapnil/event/details";
 const RUBRIC_CAMPUS_URL = "https://campus.hellorubric.com";
 const UNSW_UNIVERSITY_ID = "5";
+const RUBRIC_EVENTS_CACHE_MS = 5 * 60 * 1000;
 
 type RubricSearchResult = {
   sortindex?: unknown;
@@ -47,6 +48,8 @@ type FetchRubricEventsOptions = {
   period?: "All" | "today" | "week" | "month";
   limit?: number;
 };
+
+const rubricEventsCache = new Map<string, { expiresAt: number; events: RubricEvent[] }>();
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -164,6 +167,13 @@ export async function fetchRubricEvents({
   period = "All",
   limit = 12,
 }: FetchRubricEventsOptions = {}) {
+  const cacheKey = JSON.stringify({ query, period, limit });
+  const cached = rubricEventsCache.get(cacheKey);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.events;
+  }
+
   const data = await callRubric("getUnifiedSearch", {
     firstCall: true,
     sortType: "date",
@@ -179,6 +189,7 @@ export async function fetchRubricEvents({
   });
 
   if (data.success !== true || !Array.isArray(data.results)) {
+    rubricEventsCache.set(cacheKey, { expiresAt: Date.now() + RUBRIC_EVENTS_CACHE_MS, events: [] });
     return [];
   }
 
@@ -190,7 +201,10 @@ export async function fetchRubricEvents({
     }),
   );
 
-  return summaries
+  const events = summaries
     .map((summary, index) => normalizeEvent(summary, details[index] ?? null))
     .filter((event): event is RubricEvent => Boolean(event));
+
+  rubricEventsCache.set(cacheKey, { expiresAt: Date.now() + RUBRIC_EVENTS_CACHE_MS, events });
+  return events;
 }

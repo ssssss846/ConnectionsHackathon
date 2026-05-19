@@ -2,6 +2,7 @@ import { type Term } from "@/lib/constants";
 import type { PlannerClassOption, PlannerClassTime, SubjectSelection } from "@/lib/types";
 
 const UNSW_GRAPHQL_ENDPOINT = "https://graphql.csesoc.app/v1/graphql";
+const UNSW_CACHE_MS = 10 * 60 * 1000;
 
 type CourseRecord = {
   course_code: string;
@@ -30,6 +31,9 @@ type ClassRecord = {
   }>;
 };
 
+const courseSearchCache = new Map<string, { expiresAt: number; subjects: SubjectSelection[] }>();
+const plannerClassesCache = new Map<string, { expiresAt: number; options: Map<string, PlannerClassOption[]> }>();
+
 function getCurrentYear() {
   return new Date().getFullYear();
 }
@@ -49,6 +53,16 @@ export async function searchUnswCourses(query: string, term: Term) {
   const normalizedQuery = query.trim();
   if (normalizedQuery.length < 2) {
     return [];
+  }
+
+  const cacheKey = JSON.stringify({
+    query: normalizedQuery.toLowerCase(),
+    term,
+    year: getCurrentYear(),
+  });
+  const cached = courseSearchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.subjects;
   }
 
   const response = await fetch(UNSW_GRAPHQL_ENDPOINT, {
@@ -111,12 +125,21 @@ export async function searchUnswCourses(query: string, term: Term) {
     });
   }
 
-  return [...deduped.values()].slice(0, 8);
+  const subjects = [...deduped.values()].slice(0, 8);
+  courseSearchCache.set(cacheKey, { expiresAt: Date.now() + UNSW_CACHE_MS, subjects });
+  return subjects;
 }
 
 export async function fetchPlannerClasses(subjectCodes: string[], term: Term) {
   if (!subjectCodes.length) {
     return new Map<string, PlannerClassOption[]>();
+  }
+
+  const uniqueSubjectCodes = [...new Set(subjectCodes)].sort();
+  const cacheKey = JSON.stringify({ codes: uniqueSubjectCodes, term, year: getCurrentYear() });
+  const cached = plannerClassesCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.options;
   }
 
   const response = await fetch(UNSW_GRAPHQL_ENDPOINT, {
@@ -156,7 +179,7 @@ export async function fetchPlannerClasses(subjectCodes: string[], term: Term) {
         }
       `,
       variables: {
-        codes: subjectCodes,
+        codes: uniqueSubjectCodes,
         term,
         year: getCurrentYear(),
       },
@@ -209,5 +232,6 @@ export async function fetchPlannerClasses(subjectCodes: string[], term: Term) {
     grouped.set(classOption.course.course_code, current);
   }
 
+  plannerClassesCache.set(cacheKey, { expiresAt: Date.now() + UNSW_CACHE_MS, options: grouped });
   return grouped;
 }

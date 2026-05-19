@@ -350,6 +350,29 @@ export async function registerEventAction(formData: FormData) {
   redirect(withMessage(returnTo, "notice", "Event marked as registered."));
 }
 
+export async function unregisterEventAction(formData: FormData) {
+  const eventId = String(formData.get("event_id") ?? "").trim();
+  const returnTo = String(formData.get("return_to") ?? "/events");
+  const { supabase, user } = await getViewerContext();
+
+  if (!eventId) {
+    redirect(withMessage(returnTo, "error", "Choose a valid event."));
+  }
+
+  const { error } = await supabase
+    .from("registered_events")
+    .delete()
+    .eq("user_id", user!.id)
+    .eq("event_id", eventId);
+
+  if (error) {
+    redirect(withMessage(returnTo, "error", error.message));
+  }
+
+  revalidatePath("/events");
+  redirect(withMessage(returnTo, "notice", "Event unregistered."));
+}
+
 export async function signOutAction() {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
