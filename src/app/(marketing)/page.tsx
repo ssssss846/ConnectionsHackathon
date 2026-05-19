@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { APP_NAME, TERMS, TERM_LABELS } from "@/lib/constants";
+import { APP_NAME } from "@/lib/constants";
 
 export default function HomePage() {
   return (
@@ -13,11 +13,10 @@ export default function HomePage() {
             </span>
             <div className="space-y-4">
               <h1 className="max-w-3xl text-5xl font-semibold tracking-tight text-[var(--foreground)] sm:text-6xl">
-                Make term plans with your mates before the timetable chaos begins.
+                Plan uni life with the people already around you.
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-[var(--muted)]">
-                {APP_NAME} helps friends compare yearly subjects, spot common courses, and build a
-                shared term plan together before class registration opens.
+                {APP_NAME} helps UNSW students coordinate courses, timetables, friends, and events in one place.
               </p>
             </div>
 
@@ -46,29 +45,25 @@ export default function HomePage() {
                 </p>
                 <h2 className="mt-2 text-2xl font-semibold">What you can do first</h2>
               </div>
-              <div className="rounded-full bg-[var(--accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--accent-strong)]">
-                Hackathon-friendly
-              </div>
             </div>
 
             <div className="space-y-4">
               <div className="rounded-3xl bg-[var(--card-strong)] p-4">
-                <h3 className="font-semibold">Yearly subject setup</h3>
+                <h3 className="font-semibold">Plan your courses and timetables with friends</h3>
                 <p className="mt-2 text-sm text-[var(--muted)]">
-                  Enter up to four subjects for each of{" "}
-                  {TERMS.map((term) => TERM_LABELS[term]).join(", ")}.
+                  Compare subjects, build shared term planners, and coordinate classes before the week fills up.
                 </p>
               </div>
               <div className="rounded-3xl bg-[var(--card-strong)] p-4">
-                <h3 className="font-semibold">Friend requests and comparison</h3>
+                <h3 className="font-semibold">Organise your free-time social life with friends</h3>
                 <p className="mt-2 text-sm text-[var(--muted)]">
-                  Search by username, add friends, and immediately see which subjects overlap.
+                  See shared free windows and find events that actually fit everyone&apos;s calendar.
                 </p>
               </div>
               <div className="rounded-3xl bg-[var(--card-strong)] p-4">
-                <h3 className="font-semibold">Shared term planning</h3>
+                <h3 className="font-semibold">Discover mutuals taking the same degree</h3>
                 <p className="mt-2 text-sm text-[var(--muted)]">
-                  Create a lightweight plan with notes and shared subjects for a single term.
+                  Spot friends in your degree and find people who are likely moving through the same path.
                 </p>
               </div>
             </div>

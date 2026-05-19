@@ -28,10 +28,29 @@ export const INTEREST_OPTIONS = [
 export type Term = (typeof TERMS)[number];
 export type Interest = (typeof INTEREST_OPTIONS)[number];
 
+export const DEGREE_OPTIONS = [
+  "Bachelor of Arts",
+  "Bachelor of Commerce",
+  "Bachelor of Computer Science",
+  "Bachelor of Design",
+  "Bachelor of Engineering",
+  "Bachelor of Laws",
+  "Bachelor of Media",
+  "Bachelor of Science",
+  "Bachelor of Social Sciences",
+  "Other",
+] as const;
+
 export const TERM_LABELS: Record<Term, string> = {
   T1: "Term 1",
   T2: "Term 2",
   T3: "Term 3",
+};
+
+export const TERM_NUMBERS: Record<Term, number> = {
+  T1: 1,
+  T2: 2,
+  T3: 3,
 };
 
 export function getTermForDate(date = new Date()): Term {
@@ -50,6 +69,39 @@ export function getTermForDate(date = new Date()): Term {
 
 export function getCurrentTerm(date = new Date()): Term {
   return getTermForDate(date);
+}
+
+export function getCurrentYear(date = new Date()) {
+  return date.getFullYear();
+}
+
+export function calculateStudyProgression({
+  enrolledYear,
+  enrolledTerm,
+  currentYear = getCurrentYear(),
+  currentTerm = getCurrentTerm(),
+}: {
+  enrolledYear: number | null | undefined;
+  enrolledTerm: Term | null | undefined;
+  currentYear?: number;
+  currentTerm?: Term;
+}) {
+  if (!enrolledYear || !enrolledTerm || !TERMS.includes(enrolledTerm)) {
+    return null;
+  }
+
+  const elapsedTerms =
+    (currentYear - enrolledYear) * TERMS.length +
+    (TERMS.indexOf(currentTerm) - TERMS.indexOf(enrolledTerm));
+
+  if (elapsedTerms <= 0) {
+    return { year: 1, term: 1 };
+  }
+
+  return {
+    year: Math.floor((elapsedTerms - 1) / TERMS.length) + 1,
+    term: ((elapsedTerms - 1) % TERMS.length) + 1,
+  };
 }
 
 export function normalizeSubjectCode(value: string) {

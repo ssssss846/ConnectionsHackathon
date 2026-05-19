@@ -23,6 +23,9 @@ export type Profile = {
   full_name: string;
   zid: string;
   unsw_email: string;
+  degree: string | null;
+  enrolled_year: number | null;
+  enrolled_term: Term | null;
   created_at?: string;
 };
 
@@ -54,7 +57,7 @@ export type FriendshipRow = {
 export type SharedPlanRow = {
   id: string;
   owner_user_id: string;
-  friend_user_id: string;
+  friend_user_id: string | null;
   term: Term;
   title: string;
   notes: string | null;
@@ -139,7 +142,12 @@ export type TimetableBlock = {
 };
 
 export type FreeTimeSlot = {
+  date?: string;
   dayOfWeek: number;
   startMinutes: number;
   endMinutes: number;
+};
+
+export type DegreeMutual = Profile & {
+  mutual_friend_count: number;
 };

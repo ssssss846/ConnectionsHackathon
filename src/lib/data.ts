@@ -14,6 +14,7 @@ import type {
   PlanParticipant,
   SharedPlanRow,
   SharedFriendMarker,
+  DegreeMutual,
   SubjectRow,
   SubjectSelection,
   SubjectsByTerm,
@@ -22,6 +23,49 @@ import type {
   UserInterestRow,
   Viewer,
 } from "@/lib/types";
+
+const PROFILE_SELECT = "id, username, full_name, zid, unsw_email, degree, enrolled_year, enrolled_term, created_at";
+
+function getEmailUsername(email: string | undefined) {
+  return String(email ?? "")
+    .trim()
+    .toLowerCase()
+    .split("@")[0]
+    ?.replace(/[^a-z0-9_]/g, "") || null;
+}
+
+function buildFallbackProfile(user: Viewer & { user_metadata?: Record<string, unknown> }): Profile | null {
+  const metadata = user.user_metadata ?? {};
+  const username =
+    String(metadata.username ?? metadata.zid ?? "")
+      .trim()
+      .toLowerCase() ||
+    getEmailUsername(user.email);
+
+  if (!username) {
+    return null;
+  }
+
+  const email = String(metadata.unsw_email ?? user.email ?? "")
+    .trim()
+    .toLowerCase();
+  const fullName =
+    String(metadata.full_name ?? "").trim() ||
+    String(metadata.zid ?? "").trim() ||
+    email ||
+    username;
+
+  return {
+    id: user.id,
+    username,
+    full_name: fullName,
+    zid: String(metadata.zid ?? "").trim().toLowerCase() || username,
+    unsw_email: email || `${username}@unsw.edu.au`,
+    degree: String(metadata.degree ?? "").trim() || null,
+    enrolled_year: Number(metadata.enrolled_year) || null,
+    enrolled_term: (String(metadata.enrolled_term ?? "").trim() || null) as Term | null,
+  };
+}
 
 function normalizeRelatedProfile(value: unknown) {
   if (Array.isArray(value)) {
@@ -54,43 +98,24 @@ export async function getViewerContext(redirectOnMissing = true) {
     return { supabase, user: null, profile: null };
   }
 
-  let { data: profile } = await supabase
+  const { data: initialProfile } = await supabase
     .from("profiles")
-    .select("id, username, full_name, zid, unsw_email, created_at")
+    .select(PROFILE_SELECT)
     .eq("id", user.id)
     .single();
+  let profile = (initialProfile ?? null) as Profile | null;
 
   if (!profile) {
-    const fallbackProfile = {
-      id: user.id,
-      username:
-        String(user.user_metadata.username ?? user.user_metadata.zid ?? "")
-          .trim()
-          .toLowerCase() || null,
-      full_name: String(user.user_metadata.full_name ?? "").trim() || null,
-      zid:
-        String(user.user_metadata.zid ?? "")
-          .trim()
-          .toLowerCase() || null,
-      unsw_email:
-        String(user.user_metadata.unsw_email ?? user.email ?? "")
-          .trim()
-          .toLowerCase() || null,
-    };
+    const fallbackProfile = buildFallbackProfile(user as Viewer & { user_metadata?: Record<string, unknown> });
 
-    if (
-      fallbackProfile.username &&
-      fallbackProfile.full_name &&
-      fallbackProfile.zid &&
-      fallbackProfile.unsw_email
-    ) {
+    if (fallbackProfile) {
       const { data: repairedProfile } = await supabase
         .from("profiles")
         .upsert(fallbackProfile, { onConflict: "id" })
-        .select("id, username, full_name, zid, unsw_email, created_at")
+        .select(PROFILE_SELECT)
         .single();
 
-      profile = repairedProfile;
+      profile = (repairedProfile as Profile | null) ?? fallbackProfile;
     }
   }
 
@@ -128,7 +153,7 @@ async function getAcceptedFriendsForUser(userId: string) {
   const { data: friends } = friendIds.length
     ? await supabase
         .from("profiles")
-        .select("id, username, full_name, zid, unsw_email, created_at")
+        .select(PROFILE_SELECT)
         .in("id", friendIds)
         .order("full_name")
     : { data: [] };
@@ -160,7 +185,7 @@ export async function getDashboardData() {
     ? (
         await supabase
           .from("profiles")
-          .select("id, username, full_name, zid, unsw_email, created_at")
+          .select(PROFILE_SELECT)
           .in("id", friendIds)
       ).data ?? []
     : [];
@@ -191,13 +216,17 @@ export async function getDashboardData() {
     }
   }
 
+  const timetableBlocks = (await getUserTimetableBlocksForTerms(user!.id)).filter(
+    (block) => block.start_at || block.term === currentTerm,
+  );
+
   return {
     user: user!,
     profile: profile!,
     subjectRows: subjects,
     subjectsByTerm,
     currentTerm,
-    timetableBlocks: await getUserTimetableBlocksForTerms(user!.id),
+    timetableBlocks,
     sharedFriendsBySubject,
   };
 }
@@ -227,7 +256,12 @@ export async function getUserTimetableBlocksForTerms(userId: string, terms: Term
     .order("day_of_week")
     .order("start_minutes");
 
-  return (data ?? []) as TimetableBlock[];
+  const currentYearStart = new Date(new Date().getFullYear(), 0, 1);
+  return ((data ?? []) as TimetableBlock[]).filter((block) => {
+    if (!block.end_at) return true;
+    const endDate = new Date(block.end_at);
+    return Number.isNaN(endDate.getTime()) || endDate >= currentYearStart;
+  });
 }
 
 export async function getUserTimetableSource(userId: string, term: Term) {
@@ -277,7 +311,7 @@ export async function getFriendsData(query?: string) {
   const { data: incoming } = await supabase
     .from("friend_requests")
     .select(
-      "id, sender_user_id, receiver_user_id, status, created_at, sender:profiles!friend_requests_sender_user_id_fkey(id, username, full_name, zid, unsw_email, created_at)",
+      `id, sender_user_id, receiver_user_id, status, created_at, sender:profiles!friend_requests_sender_user_id_fkey(${PROFILE_SELECT})`,
     )
     .eq("receiver_user_id", currentUserId)
     .eq("status", "pending")
@@ -286,7 +320,7 @@ export async function getFriendsData(query?: string) {
   const { data: outgoing } = await supabase
     .from("friend_requests")
     .select(
-      "id, sender_user_id, receiver_user_id, status, created_at, receiver:profiles!friend_requests_receiver_user_id_fkey(id, username, full_name, zid, unsw_email, created_at)",
+      `id, sender_user_id, receiver_user_id, status, created_at, receiver:profiles!friend_requests_receiver_user_id_fkey(${PROFILE_SELECT})`,
     )
     .eq("sender_user_id", currentUserId)
     .eq("status", "pending")
@@ -306,7 +340,7 @@ export async function getFriendsData(query?: string) {
 
       const { data } = await supabase
         .from("profiles")
-        .select("id, username, full_name, zid, unsw_email, created_at")
+        .select(PROFILE_SELECT)
         .or(
           `full_name.ilike.%${normalizedQuery}%,zid.ilike.%${normalizedQuery}%,unsw_email.ilike.%${normalizedQuery}%`,
         )
@@ -338,6 +372,13 @@ export async function getFriendsData(query?: string) {
       };
     }),
   );
+  const sameDegreeFriends =
+    profile?.degree
+      ? friends.filter((friend) => friend.degree && friend.degree === profile.degree)
+      : [];
+  const { data: degreeMutualRows } = profile?.degree
+    ? await supabase.rpc("discover_same_degree_mutuals")
+    : { data: [] };
 
   return {
     profile: profile!,
@@ -353,6 +394,8 @@ export async function getFriendsData(query?: string) {
     })) as FriendRequestRow[],
     searchResults,
     sharedSubjectsByFriend: sharedSubjectsByFriend.filter((entry) => entry.shared.length > 0),
+    sameDegreeFriends,
+    degreeMutuals: (degreeMutualRows ?? []) as DegreeMutual[],
   };
 }
 
@@ -360,7 +403,7 @@ export async function getFriendDetail(friendId: string) {
   const { supabase, user, profile } = await getViewerContext();
   const { data: friendProfile } = await supabase
     .from("profiles")
-    .select("id, username, full_name, zid, unsw_email, created_at")
+    .select(PROFILE_SELECT)
     .eq("id", friendId)
     .single();
 
@@ -417,11 +460,13 @@ export async function getPlansIndexData() {
     .order("created_at", { ascending: false });
 
   const planRows = (plans ?? []) as SharedPlanRow[];
-  const participantIds = [...new Set(planRows.flatMap((plan) => [plan.owner_user_id, plan.friend_user_id]))];
+  const participantIds = [
+    ...new Set(planRows.flatMap((plan) => [plan.owner_user_id, plan.friend_user_id]).filter(Boolean)),
+  ] as string[];
   const { data: participantProfiles } = participantIds.length
     ? await supabase
         .from("profiles")
-        .select("id, username, full_name, zid, unsw_email, created_at")
+        .select(PROFILE_SELECT)
         .in("id", participantIds)
     : { data: [] };
 
@@ -448,7 +493,7 @@ export async function getPlansIndexData() {
       ...plan,
       participants:
         participantsByPlan.get(plan.id) ??
-        [profilesById.get(plan.owner_user_id), profilesById.get(plan.friend_user_id)].filter(Boolean),
+        [profilesById.get(plan.owner_user_id), plan.friend_user_id ? profilesById.get(plan.friend_user_id) : null].filter(Boolean),
     })),
   };
 }
@@ -504,10 +549,12 @@ export async function getPlannerWorkspace(planId: string) {
     .eq("plan_id", plan.id);
 
   if (!participantRows?.length) {
-    await supabase.from("shared_term_plan_participants").insert([
-      { plan_id: plan.id, user_id: plan.owner_user_id },
-      { plan_id: plan.id, user_id: plan.friend_user_id },
-    ]);
+    const defaultParticipants = [{ plan_id: plan.id, user_id: plan.owner_user_id }];
+    if (plan.friend_user_id) {
+      defaultParticipants.push({ plan_id: plan.id, user_id: plan.friend_user_id });
+    }
+
+    await supabase.from("shared_term_plan_participants").insert(defaultParticipants);
 
     participantRows = (
       await supabase
@@ -522,7 +569,7 @@ export async function getPlannerWorkspace(planId: string) {
     await Promise.all([
       supabase
         .from("profiles")
-        .select("id, username, full_name, zid, unsw_email, created_at")
+        .select(PROFILE_SELECT)
         .in("id", participantIds),
       getAcceptedFriendsForUser(user!.id),
       Promise.all(participantIds.map((participantId) => getUserSubjects(participantId))),

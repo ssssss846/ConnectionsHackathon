@@ -14,6 +14,10 @@ type SubjectFormProps = {
   redirectTo?: string;
 };
 
+type SubjectFieldsProps = {
+  defaultSubjects: SubjectsByTerm;
+};
+
 type SubjectSlot = SubjectSelection & {
   id: string;
   query: string;
@@ -44,13 +48,7 @@ function buildInitialSlots(defaultSubjects: SubjectsByTerm) {
   );
 }
 
-export function SubjectForm({
-  action,
-  defaultSubjects,
-  submitLabel,
-  redirectTo,
-}: SubjectFormProps) {
-  const [state, formAction, pending] = useActionState(action, initialState);
+export function SubjectFields({ defaultSubjects }: SubjectFieldsProps) {
   const [slotsByTerm, setSlotsByTerm] = useState<Record<Term, SubjectSlot[]>>(
     buildInitialSlots(defaultSubjects),
   );
@@ -157,9 +155,6 @@ export function SubjectForm({
   }
 
   return (
-    <form action={formAction} className="space-y-6">
-      {redirectTo ? <input type="hidden" name="redirect_to" value={redirectTo} /> : null}
-
       <div className="grid gap-4 lg:grid-cols-3">
         {TERMS.map((term) => (
           <section
@@ -169,7 +164,6 @@ export function SubjectForm({
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold">{TERM_LABELS[term]}</h3>
-                <p className="text-sm text-[var(--muted)]">Search real UNSW courses. Max 4.</p>
               </div>
               <button
                 type="button"
@@ -186,72 +180,87 @@ export function SubjectForm({
                 slotsByTerm[term].map((slot) => (
                   <div key={slot.id} className="rounded-2xl border border-[var(--border)] bg-white/70 p-2.5">
                     <input
-                      value={slot.query}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        updateSlot(term, slot.id, {
-                          query: value,
-                          code: "",
-                          name: "",
-                        });
-                        if (value.trim().length < 2) {
-                          setSuggestionsBySlot((current) => ({ ...current, [slot.id]: [] }));
-                          setStatusBySlot((current) => ({ ...current, [slot.id]: "idle" }));
-                        } else {
-                          setStatusBySlot((current) => ({ ...current, [slot.id]: "loading" }));
-                        }
-                        setActiveSlotId(slot.id);
-                      }}
-                      onFocus={() => setActiveSlotId(slot.id)}
-                      placeholder="Search COMP1531 or Software Engineering Fundamentals"
-                      className="w-full bg-transparent text-[13px] leading-5 outline-none"
-                    />
-                    <input
                       type="hidden"
                       name={term}
                       value={slot.code && slot.name ? JSON.stringify({ code: slot.code, name: slot.name }) : ""}
                     />
 
                     {slot.code && slot.name ? (
-                      <p className="mt-1.5 text-[11px] text-[var(--muted)]">
-                        Selected: <span className="font-medium">{slot.code}</span> {slot.name}
-                      </p>
-                    ) : null}
-
-                    {activeSlotId === slot.id && suggestionsBySlot[slot.id]?.length ? (
-                      <div className="mt-2 space-y-1 rounded-2xl border border-[var(--border)] bg-white p-1.5">
-                        {suggestionsBySlot[slot.id].map((subject) => (
+                      <div className="rounded-xl bg-[var(--card-strong)] px-3 py-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-bold">{slot.code}</p>
+                            <p className="mt-0.5 text-xs leading-5 text-[var(--muted)]">{slot.name}</p>
+                          </div>
                           <button
-                            key={subject.code}
                             type="button"
-                            onClick={() => selectSubject(term, slot.id, subject)}
-                            className="block w-full rounded-xl px-2.5 py-1.5 text-left text-[13px] transition hover:bg-[var(--accent-soft)]"
+                            onClick={() => removeSlot(term, slot.id)}
+                            className="text-[11px] font-semibold text-[var(--muted)] transition hover:text-[var(--danger)]"
                           >
-                            <span className="font-semibold">{subject.code}</span> {subject.name}
+                            Remove
                           </button>
-                        ))}
+                        </div>
                       </div>
-                    ) : null}
+                    ) : (
+                      <div>
+                        <input
+                          value={slot.query}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            updateSlot(term, slot.id, {
+                              query: value,
+                              code: "",
+                              name: "",
+                            });
+                            if (value.trim().length < 2) {
+                              setSuggestionsBySlot((current) => ({ ...current, [slot.id]: [] }));
+                              setStatusBySlot((current) => ({ ...current, [slot.id]: "idle" }));
+                            } else {
+                              setStatusBySlot((current) => ({ ...current, [slot.id]: "loading" }));
+                            }
+                            setActiveSlotId(slot.id);
+                          }}
+                          onFocus={() => setActiveSlotId(slot.id)}
+                          placeholder="Search COMP1531 or Software Engineering Fundamentals"
+                          className="w-full bg-transparent text-[13px] leading-5 outline-none"
+                        />
 
-                    {activeSlotId === slot.id && statusBySlot[slot.id] === "loading" ? (
-                      <p className="mt-1.5 text-[11px] text-[var(--muted)]">Searching UNSW courses...</p>
-                    ) : null}
+                        {activeSlotId === slot.id && suggestionsBySlot[slot.id]?.length ? (
+                          <div className="mt-2 space-y-1 rounded-2xl border border-[var(--border)] bg-white p-1.5">
+                            {suggestionsBySlot[slot.id].map((subject) => (
+                              <button
+                                key={subject.code}
+                                type="button"
+                                onClick={() => selectSubject(term, slot.id, subject)}
+                                className="block w-full rounded-xl px-2.5 py-1.5 text-left text-[13px] transition hover:bg-[var(--accent-soft)]"
+                              >
+                                <span className="font-semibold">{subject.code}</span> {subject.name}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
 
-                    {activeSlotId === slot.id && statusBySlot[slot.id] === "error" ? (
-                      <p className="mt-1.5 text-[11px] text-[var(--danger)]">
-                        Could not search courses right now. Try again in a moment.
-                      </p>
-                    ) : null}
+                        {activeSlotId === slot.id && statusBySlot[slot.id] === "loading" ? (
+                          <p className="mt-1.5 text-[11px] text-[var(--muted)]">Searching UNSW courses...</p>
+                        ) : null}
 
-                    <div className="mt-2 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => removeSlot(term, slot.id)}
-                        className="text-[11px] font-semibold text-[var(--muted)] transition hover:text-[var(--danger)]"
-                      >
-                        Remove
-                      </button>
-                    </div>
+                        {activeSlotId === slot.id && statusBySlot[slot.id] === "error" ? (
+                          <p className="mt-1.5 text-[11px] text-[var(--danger)]">
+                            Could not search courses right now. Try again in a moment.
+                          </p>
+                        ) : null}
+
+                        <div className="mt-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => removeSlot(term, slot.id)}
+                            className="text-[11px] font-semibold text-[var(--muted)] transition hover:text-[var(--danger)]"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (
@@ -263,6 +272,22 @@ export function SubjectForm({
           </section>
         ))}
       </div>
+  );
+}
+
+export function SubjectForm({
+  action,
+  defaultSubjects,
+  submitLabel,
+  redirectTo,
+}: SubjectFormProps) {
+  const [state, formAction, pending] = useActionState(action, initialState);
+
+  return (
+    <form action={formAction} className="space-y-6">
+      {redirectTo ? <input type="hidden" name="redirect_to" value={redirectTo} /> : null}
+
+      <SubjectFields defaultSubjects={defaultSubjects} />
 
       {state.error ? (
         <p className="rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger)]">

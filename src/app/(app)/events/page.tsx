@@ -2,7 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { TimetableView } from "@/components/timetable-view";
-import { TERM_LABELS } from "@/lib/constants";
 import { getEventRecommendationsData } from "@/lib/recommendations";
 
 type EventsSearchParams = {
@@ -48,7 +47,7 @@ export default async function EventsPage({
           <div>
             <h1 className="text-4xl font-semibold tracking-tight">Find a time everyone can actually make</h1>
             <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--muted)]">
-              Recommendations use your {TERM_LABELS[data.currentTerm]} timetable, selected friends&apos; timetables, and shared interests to suggest Arc @ UNSW events from Rubric.
+              Recommendations use your timetable, selected friends&apos; timetables, and saved interests to suggest Arc @ UNSW events from Rubric.
             </p>
             <div className="mt-5 flex flex-wrap gap-2 text-xs font-semibold text-[var(--muted)]">
               <span className="rounded-full bg-[var(--card-strong)] px-3 py-2">
@@ -112,9 +111,20 @@ export default async function EventsPage({
 
       <section className="rounded-[32px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)]">
         <h2 className="text-xl font-semibold">Shared free time calendar</h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-          Green blocks show when {participantLabel} {data.participantCount === 1 ? "is" : "are"} all free. Click a green block to jump to matching event suggestions.
-        </p>
+        <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold text-[var(--muted)]">
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm border border-emerald-300 bg-emerald-100" />
+            Everyone is free
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm bg-[var(--accent)]" />
+            Class or busy time
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm bg-orange-500" />
+            Matching event or overlap
+          </span>
+        </div>
         {data.sharedInterests.length ? (
           <div className="mt-4 flex flex-wrap gap-2">
             {data.sharedInterests.map((interest) => (
@@ -129,7 +139,7 @@ export default async function EventsPage({
         ) : null}
         <div className="mt-5">
           <TimetableView
-            blocks={[]}
+            blocks={data.calendarBlocks}
             freeSlots={data.sharedFreeSlots}
             sharedParticipantLabel={participantLabel}
             emptyMessage="No shared free time found for this group."
@@ -138,8 +148,10 @@ export default async function EventsPage({
       </section>
 
       {data.recommendations.length ? (
-        <section id="recommended-events" className="grid gap-5 lg:grid-cols-2">
-          {data.recommendations.map((event) => (
+        <section id="recommended-events" className="space-y-5">
+          <h2 className="text-2xl font-semibold">Recommended Events</h2>
+          <div className="grid gap-5 lg:grid-cols-2">
+            {data.recommendations.map((event) => (
             <article
               key={event.id}
               className="overflow-hidden rounded-[28px] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow)]"
@@ -212,7 +224,8 @@ export default async function EventsPage({
                 </a>
               </div>
             </article>
-          ))}
+            ))}
+          </div>
         </section>
       ) : (
         <section className="rounded-[32px] border border-[var(--border)] bg-[var(--card)] p-8 text-center shadow-[var(--shadow)]">

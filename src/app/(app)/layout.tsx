@@ -6,5 +6,5 @@ export default async function ProtectedLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const { profile } = await getViewerContext();
 
-  return <AppShell profile={profile!}>{children}</AppShell>;
+  return <AppShell profile={profile}>{children}</AppShell>;
 }

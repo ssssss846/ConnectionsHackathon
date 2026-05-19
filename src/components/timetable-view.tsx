@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { WEEK_DAYS, getTermForDate } from "@/lib/constants";
+import { WEEK_DAYS } from "@/lib/constants";
 import { formatMinutes, getDayLabel } from "@/lib/timetable";
 import type { FreeTimeSlot, TimetableBlock } from "@/lib/types";
 
@@ -121,6 +121,18 @@ function isSameCalendarDate(left: Date, right: Date) {
   );
 }
 
+function formatDateKey(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function slotMatchesDate(slot: FreeTimeSlot, date: Date) {
+  return slot.date ? slot.date === formatDateKey(date) : slot.dayOfWeek === getDayOfWeek(date);
+}
+
 function parseBlockDate(block: TimetableBlock) {
   if (!block.start_at) return null;
 
@@ -134,7 +146,7 @@ function blockMatchesDate(block: TimetableBlock, date: Date) {
     return isSameCalendarDate(blockDate, date);
   }
 
-  return block.day_of_week === getDayOfWeek(date) && block.term === getTermForDate(date);
+  return block.day_of_week === getDayOfWeek(date);
 }
 
 function blocksOverlap(left: TimetableBlock, right: TimetableBlock) {
@@ -261,7 +273,7 @@ export function TimetableView({
             <button
               type="button"
               onClick={moveToToday}
-              className="rounded-full px-3 py-1.5 text-sm font-semibold transition hover:bg-[var(--card-strong)]"
+              className="rounded-full bg-[var(--accent-soft)] px-3 py-1.5 text-sm font-bold text-[var(--accent-strong)] transition hover:bg-[var(--accent)] hover:text-white"
             >
               Today
             </button>
@@ -321,9 +333,8 @@ export function TimetableView({
             </div>
           ))}
           {monthCells.map((date) => {
-            const dayOfWeek = getDayOfWeek(date);
             const dayBlocks = layoutDayBlocks(blocks.filter((block) => blockMatchesDate(block, date)));
-            const dayFreeSlots = freeSlots.filter((slot) => slot.dayOfWeek === dayOfWeek);
+            const dayFreeSlots = freeSlots.filter((slot) => slotMatchesDate(slot, date));
 
             return (
               <div
@@ -343,7 +354,7 @@ export function TimetableView({
                   {showFreeSlots
                     ? dayFreeSlots.slice(0, 2).map((slot) => (
                         <a
-                          key={`month-free-${slot.dayOfWeek}-${slot.startMinutes}-${slot.endMinutes}`}
+                          key={`month-free-${slot.date ?? slot.dayOfWeek}-${slot.startMinutes}-${slot.endMinutes}`}
                           href="#recommended-events"
                           title={`${sharedParticipantLabel} free from ${formatMinutes(slot.startMinutes)} to ${formatMinutes(slot.endMinutes)} (${durationLabel(slot.startMinutes, slot.endMinutes)})`}
                           className="block rounded-md bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700"
@@ -356,7 +367,7 @@ export function TimetableView({
                     <p
                       key={getBlockId(block)}
                       className={`truncate rounded-md px-2 py-1 text-[11px] font-semibold ${
-                        block.isOverlapping
+                        block.isOverlapping || block.source_type === "auto_reference"
                           ? "bg-orange-100 text-orange-700"
                           : "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
                       }`}
@@ -402,7 +413,7 @@ export function TimetableView({
 
             {visibleDays.map((day) => {
               const dayBlocks = layoutDayBlocks(blocks.filter((block) => blockMatchesDate(block, day.date)));
-              const dayFreeSlots = freeSlots.filter((slot) => slot.dayOfWeek === day.value);
+              const dayFreeSlots = freeSlots.filter((slot) => slotMatchesDate(slot, day.date));
 
               return (
                 <div
@@ -421,7 +432,7 @@ export function TimetableView({
                   {showFreeSlots
                     ? dayFreeSlots.map((slot) => (
                         <a
-                          key={`free-${slot.dayOfWeek}-${slot.startMinutes}-${slot.endMinutes}`}
+                          key={`free-${slot.date ?? slot.dayOfWeek}-${slot.startMinutes}-${slot.endMinutes}`}
                           href="#recommended-events"
                           title={`${sharedParticipantLabel} free from ${formatMinutes(slot.startMinutes)} to ${formatMinutes(slot.endMinutes)} (${durationLabel(slot.startMinutes, slot.endMinutes)}). Click to find events in this slot.`}
                           className="absolute left-1 right-1 z-10 rounded-lg border border-emerald-300 bg-emerald-100/85 px-2 py-1 text-[11px] font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-200"
@@ -442,18 +453,23 @@ export function TimetableView({
                     const id = getBlockId(block);
                     const columnWidth = 100 / block.overlapCount;
                     const overlapGap = block.isOverlapping ? 4 : 0;
+                    const displayStart = Math.max(block.start_minutes, START_MINUTES);
+                    const displayEnd = Math.min(block.end_minutes, END_MINUTES);
+                    if (displayStart >= displayEnd) return null;
+                    const isEventHighlight = block.source_type === "auto_reference";
+
                     return (
                       <div
                         key={id}
                         title={`${block.label}: ${formatMinutes(block.start_minutes)} to ${formatMinutes(block.end_minutes)}${block.location ? `, ${block.location}` : ""}`}
                         className={`absolute z-20 rounded-lg border px-2 py-1 text-xs font-semibold text-white shadow-md ${
-                          block.isOverlapping
+                          block.isOverlapping || isEventHighlight
                             ? "border-orange-600 bg-orange-500"
                             : "border-[var(--accent)] bg-[var(--accent)]"
                         }`}
                         style={{
-                          top: (block.start_minutes - START_MINUTES) * PX_PER_MINUTE,
-                          height: Math.max(30, (block.end_minutes - block.start_minutes) * PX_PER_MINUTE),
+                          top: (displayStart - START_MINUTES) * PX_PER_MINUTE,
+                          height: Math.max(30, (displayEnd - displayStart) * PX_PER_MINUTE),
                           left: `calc(${block.overlapIndex * columnWidth}% + ${8 + overlapGap}px)`,
                           width: `calc(${columnWidth}% - ${16 + overlapGap}px)`,
                         }}

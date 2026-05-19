@@ -1,4 +1,5 @@
-import { saveSubjectsAction } from "@/app/actions";
+import { saveOnboardingInterestsAction, saveSubjectsAction } from "@/app/actions";
+import { OnboardingInterestsForm } from "@/components/onboarding-interests-form";
 import { SubjectForm } from "@/components/subject-form";
 import { buildEmptySubjects, groupSubjectsByTerm } from "@/lib/forms";
 import { getUserSubjects, getViewerContext } from "@/lib/data";
@@ -24,12 +25,16 @@ export default async function OnboardingPage() {
         </p>
       </section>
 
-      <SubjectForm
-        action={saveSubjectsAction}
-        defaultSubjects={defaults}
-        submitLabel="Finish setup"
-        redirectTo="/dashboard?notice=Welcome%20to%20UNSW%20Mates."
-      />
+      <OnboardingInterestsForm action={saveOnboardingInterestsAction} />
+
+      <section id="course-setup" className="scroll-mt-6">
+        <SubjectForm
+          action={saveSubjectsAction}
+          defaultSubjects={defaults}
+          submitLabel="Finish setup"
+          redirectTo="/dashboard?notice=Welcome%20to%20UNSW%20Mates."
+        />
+      </section>
     </div>
   );
 }

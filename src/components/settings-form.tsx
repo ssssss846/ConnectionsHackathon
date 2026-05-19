@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, type ReactNode } from "react";
 
-import { INTEREST_OPTIONS, TERMS, TERM_LABELS, WEEK_DAYS, type Term } from "@/lib/constants";
+import { DEGREE_OPTIONS, INTEREST_OPTIONS, TERMS, TERM_LABELS, WEEK_DAYS, type Term } from "@/lib/constants";
 import { formatMinutes } from "@/lib/timetable";
-import type { FormState, TimetableBlock, TimetableSource } from "@/lib/types";
+import type { FormState, Profile, TimetableBlock, TimetableSource } from "@/lib/types";
 
 type EditableBlock = {
   id: string;
@@ -17,10 +17,13 @@ type EditableBlock = {
 
 type SettingsFormProps = {
   action: (state: FormState, formData: FormData) => Promise<FormState>;
+  profile: Profile;
   currentTerm: Term;
   selectedInterests: string[];
   timetableSource: TimetableSource | null;
   timetableBlocks: TimetableBlock[];
+  submitLabel?: string;
+  children?: ReactNode;
 };
 
 const initialState: FormState = {};
@@ -44,13 +47,15 @@ function createBlock(index: number): EditableBlock {
 
 export function SettingsForm({
   action,
+  profile,
   currentTerm,
   selectedInterests,
   timetableSource,
   timetableBlocks,
+  submitLabel = "Save changes",
+  children,
 }: SettingsFormProps) {
   const [state, formAction, pending] = useActionState(action, initialState);
-  const [term, setTerm] = useState<Term>(currentTerm);
   const [sourceType, setSourceType] = useState<"manual" | "calendar_url">(
     timetableSource?.source_type === "calendar_url" ? "calendar_url" : "manual",
   );
@@ -65,6 +70,8 @@ export function SettingsForm({
     })),
   );
 
+  const enrolmentYears = Array.from({ length: 13 }, (_, index) => new Date().getFullYear() + 1 - index);
+
   function updateBlock(id: string, nextValue: Partial<EditableBlock>) {
     setBlocks((current) =>
       current.map((block) => (block.id === id ? { ...block, ...nextValue } : block)),
@@ -77,6 +84,83 @@ export function SettingsForm({
 
   return (
     <form action={formAction} className="space-y-8">
+      <section className="rounded-[32px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)]">
+        <h2 className="text-2xl font-semibold">Profile</h2>
+        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          <label className="block text-sm font-semibold text-[var(--muted)]">
+            Full name
+            <input
+              value={profile.full_name ?? ""}
+              readOnly
+              className="mt-2 h-11 w-full rounded-full border border-[var(--border)] bg-[var(--card-strong)] px-4 text-sm text-[var(--foreground)] outline-none"
+            />
+          </label>
+          <label className="block text-sm font-semibold text-[var(--muted)]">
+            zID
+            <input
+              value={profile.zid ?? ""}
+              readOnly
+              className="mt-2 h-11 w-full rounded-full border border-[var(--border)] bg-[var(--card-strong)] px-4 text-sm text-[var(--foreground)] outline-none"
+            />
+          </label>
+          <label className="block text-sm font-semibold text-[var(--muted)]">
+            UNSW email
+            <input
+              value={profile.unsw_email ?? ""}
+              readOnly
+              className="mt-2 h-11 w-full rounded-full border border-[var(--border)] bg-[var(--card-strong)] px-4 text-sm text-[var(--foreground)] outline-none"
+            />
+          </label>
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <label className="block text-sm font-semibold">
+            Degree
+            <select
+              name="degree"
+              defaultValue={profile.degree ?? ""}
+              className="mt-2 h-11 w-full rounded-full border border-[var(--border)] bg-white px-4 text-sm outline-none"
+            >
+              <option value="">Choose degree</option>
+              {DEGREE_OPTIONS.map((degree) => (
+                <option key={degree} value={degree}>
+                  {degree}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-semibold">
+            Year enrolled
+            <select
+              name="enrolled_year"
+              defaultValue={profile.enrolled_year ?? ""}
+              className="mt-2 h-11 w-full rounded-full border border-[var(--border)] bg-white px-4 text-sm outline-none"
+            >
+              <option value="">Choose year</option>
+              {enrolmentYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-semibold">
+            Term enrolled
+            <select
+              name="enrolled_term"
+              defaultValue={profile.enrolled_term ?? ""}
+              className="mt-2 h-11 w-full rounded-full border border-[var(--border)] bg-white px-4 text-sm outline-none"
+            >
+              <option value="">Choose term</option>
+              {TERMS.map((term) => (
+                <option key={term} value={term}>
+                  {TERM_LABELS[term]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </section>
+
       <section className="rounded-[32px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)]">
         <h2 className="text-2xl font-semibold">Interests</h2>
         <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
@@ -102,31 +186,16 @@ export function SettingsForm({
       </section>
 
       <section className="rounded-[32px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)]">
+        <input type="hidden" name="term" value={currentTerm} />
         <div className="grid gap-5 lg:grid-cols-[0.7fr_1.3fr]">
           <div>
-            <h2 className="text-2xl font-semibold">Current term timetable</h2>
+            <h2 className="text-2xl font-semibold">Timetable</h2>
             <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-              Add busy blocks manually for one term, or paste your year-long myUNSW/Google Calendar feed link once and reuse it across terms.
+              Add weekly busy blocks manually, or paste your year-long myUNSW/Google Calendar feed link.
             </p>
           </div>
 
           <div className="space-y-4">
-            <label className="block text-sm font-semibold">
-              Term
-              <select
-                name="term"
-                value={term}
-                onChange={(event) => setTerm(event.target.value as Term)}
-                className="mt-2 h-11 w-full rounded-full border border-[var(--border)] bg-white px-4 text-sm outline-none"
-              >
-                {TERMS.map((termOption) => (
-                  <option key={termOption} value={termOption}>
-                    {TERM_LABELS[termOption]}
-                  </option>
-                ))}
-              </select>
-            </label>
-
             <div className="flex flex-wrap gap-2">
               <label className="cursor-pointer rounded-full border border-[var(--border)] bg-white/80 px-4 py-2 text-sm font-semibold has-[:checked]:border-[var(--accent)] has-[:checked]:bg-[var(--accent-soft)] has-[:checked]:text-[var(--accent-strong)]">
                 <input
@@ -242,6 +311,8 @@ export function SettingsForm({
         ) : null}
       </section>
 
+      {children}
+
       {state.error ? (
         <p className="rounded-2xl border border-[var(--danger)]/20 bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger)]">
           {state.error}
@@ -258,7 +329,7 @@ export function SettingsForm({
         disabled={pending}
         className="rounded-full bg-[var(--accent)] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {pending ? "Saving..." : "Save interests and timetable"}
+        {pending ? "Saving..." : submitLabel}
       </button>
     </form>
   );

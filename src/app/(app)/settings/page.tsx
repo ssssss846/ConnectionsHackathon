@@ -1,11 +1,10 @@
-import { saveSettingsAction, saveSubjectsAction } from "@/app/actions";
+import { saveSettingsAndSubjectsAction } from "@/app/actions";
 import { SettingsForm } from "@/components/settings-form";
-import { SubjectForm } from "@/components/subject-form";
-import { TERM_LABELS } from "@/lib/constants";
+import { SubjectFields } from "@/components/subject-form";
 import { getSettingsData } from "@/lib/data";
 
 export default async function SettingsPage() {
-  const { currentTerm, interests, subjectsByTerm, timetableBlocks, timetableSource } =
+  const { profile, currentTerm, interests, subjectsByTerm, timetableBlocks, timetableSource } =
     await getSettingsData();
 
   return (
@@ -16,32 +15,29 @@ export default async function SettingsPage() {
         </p>
         <h1 className="mt-3 text-4xl font-semibold tracking-tight">Personalise your planner</h1>
         <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--muted)]">
-          Keep your courses, interests, and {TERM_LABELS[currentTerm]} timetable up to date so recommendations can find shared free time with friends.
+          Keep your courses, profile, interests, and timetable up to date so recommendations can find shared free time with friends.
         </p>
       </section>
 
       <SettingsForm
-        action={saveSettingsAction}
+        action={saveSettingsAndSubjectsAction}
+        profile={profile}
         currentTerm={currentTerm}
         selectedInterests={interests}
         timetableSource={timetableSource}
         timetableBlocks={timetableBlocks}
-      />
-
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-2xl font-semibold">Course selections</h2>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            These are used for subject overlap and shared timetable planning.
-          </p>
-        </div>
-        <SubjectForm
-          action={saveSubjectsAction}
-          defaultSubjects={subjectsByTerm}
-          submitLabel="Save courses"
-          redirectTo="/settings"
-        />
-      </section>
+        submitLabel="Save changes"
+      >
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-2xl font-semibold">Course selections</h2>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              These are used for subject overlap and shared timetable planning.
+            </p>
+          </div>
+          <SubjectFields defaultSubjects={subjectsByTerm} />
+        </section>
+      </SettingsForm>
     </div>
   );
 }

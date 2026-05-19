@@ -1,4 +1,5 @@
 import {
+  DEGREE_OPTIONS,
   INTEREST_OPTIONS,
   MAX_SUBJECTS_PER_TERM,
   TERMS,
@@ -111,11 +112,18 @@ export function readSignUpDetails(formData: FormData): FormSuccess<{
   zid: string;
   email: string;
   password: string;
+  degree: string;
+  enrolledYear: number;
+  enrolledTerm: Term;
 }> | FormFailure {
   const fullName = String(formData.get("full_name") ?? "").trim();
   const zid = normalizeZid(String(formData.get("zid") ?? ""));
   const email = normalizeEmail(String(formData.get("email") ?? ""));
   const password = String(formData.get("password") ?? "");
+  const degree = String(formData.get("degree") ?? "").trim();
+  const enrolledYear = Number(formData.get("enrolled_year"));
+  const enrolledTerm = String(formData.get("enrolled_term") ?? "") as Term;
+  const currentYear = new Date().getFullYear();
 
   if (fullName.length < 2) {
     return {
@@ -149,7 +157,31 @@ export function readSignUpDetails(formData: FormData): FormSuccess<{
     };
   }
 
-  return { data: { fullName, zid, email, password } };
+  if (!degree || !(DEGREE_OPTIONS as readonly string[]).includes(degree)) {
+    return {
+      error: {
+        error: "Choose your degree.",
+      },
+    };
+  }
+
+  if (!Number.isInteger(enrolledYear) || enrolledYear < currentYear - 12 || enrolledYear > currentYear + 1) {
+    return {
+      error: {
+        error: "Choose the year you enrolled.",
+      },
+    };
+  }
+
+  if (!TERMS.includes(enrolledTerm)) {
+    return {
+      error: {
+        error: "Choose the term you enrolled in.",
+      },
+    };
+  }
+
+  return { data: { fullName, zid, email, password, degree, enrolledYear, enrolledTerm } };
 }
 
 export function buildEmptySubjects(): SubjectsByTerm {
@@ -195,22 +227,54 @@ export function getCommonSubjects(
   return common;
 }
 
+export function readInterestsFromFormData(formData: FormData) {
+  return [
+    ...new Set(
+      formData
+        .getAll("interests")
+        .map((value) => String(value))
+        .filter((value): value is Interest =>
+          (INTEREST_OPTIONS as readonly string[]).includes(value),
+        ),
+    ),
+  ].slice(0, 12);
+}
+
 export function readSettingsFromFormData(formData: FormData): FormSuccess<{
   interests: Interest[];
+  degree: string | null;
+  enrolledYear: number | null;
+  enrolledTerm: Term | null;
   term: Term;
   sourceType: "manual" | "calendar_url";
   calendarUrl: string | null;
   blocks: Array<Pick<TimetableBlock, "term" | "start_at" | "end_at" | "day_of_week" | "start_minutes" | "end_minutes" | "label" | "location">>;
 }> | FormFailure {
-  const interests = formData
-    .getAll("interests")
-    .map((value) => String(value))
-    .filter((value): value is Interest =>
-      (INTEREST_OPTIONS as readonly string[]).includes(value),
-    );
+  const interests = readInterestsFromFormData(formData);
+  const degree = String(formData.get("degree") ?? "").trim() || null;
+  const enrolledYearRaw = String(formData.get("enrolled_year") ?? "").trim();
+  const enrolledYear = enrolledYearRaw ? Number(enrolledYearRaw) : null;
+  const enrolledTermRaw = String(formData.get("enrolled_term") ?? "").trim();
+  const enrolledTerm = enrolledTermRaw ? (enrolledTermRaw as Term) : null;
   const term = String(formData.get("term") ?? "") as Term;
   const sourceType = String(formData.get("source_type") ?? "manual");
   const calendarUrl = String(formData.get("calendar_url") ?? "").trim() || null;
+  const currentYear = new Date().getFullYear();
+
+  if (degree && !(DEGREE_OPTIONS as readonly string[]).includes(degree)) {
+    return { error: { error: "Choose a valid degree." } };
+  }
+
+  if (
+    enrolledYear !== null &&
+    (!Number.isInteger(enrolledYear) || enrolledYear < currentYear - 12 || enrolledYear > currentYear + 1)
+  ) {
+    return { error: { error: "Choose a valid enrolment year." } };
+  }
+
+  if (enrolledTerm && !TERMS.includes(enrolledTerm)) {
+    return { error: { error: "Choose a valid enrolment term." } };
+  }
 
   if (!TERMS.includes(term)) {
     return { error: { error: "Choose a valid term." } };
@@ -300,7 +364,10 @@ export function readSettingsFromFormData(formData: FormData): FormSuccess<{
 
   return {
     data: {
-      interests: [...new Set(interests)].slice(0, 12),
+      interests,
+      degree,
+      enrolledYear,
+      enrolledTerm,
       term,
       sourceType,
       calendarUrl,

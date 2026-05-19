@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Notice } from "@/components/notice";
 import { TimetableView } from "@/components/timetable-view";
-import { TERMS, TERM_LABELS } from "@/lib/constants";
+import { TERMS, TERM_LABELS, calculateStudyProgression } from "@/lib/constants";
 import { getDashboardData } from "@/lib/data";
 
 export default async function DashboardPage({
@@ -13,6 +13,10 @@ export default async function DashboardPage({
   const { profile, subjectsByTerm, sharedFriendsBySubject, timetableBlocks } =
     await getDashboardData();
   const params = await searchParams;
+  const studyProgression = calculateStudyProgression({
+    enrolledYear: profile.enrolled_year,
+    enrolledTerm: profile.enrolled_term,
+  });
 
   return (
     <div className="space-y-8">
@@ -27,6 +31,18 @@ export default async function DashboardPage({
           <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--muted)]">
             Keep your subjects current so your friends can compare overlap and plan the term with you.
           </p>
+          {profile.degree || studyProgression ? (
+            <div className="mt-5 flex flex-wrap gap-2 text-xs font-semibold text-[var(--muted)]">
+              {profile.degree ? (
+                <span className="rounded-full bg-[var(--card-strong)] px-3 py-2">{profile.degree}</span>
+              ) : null}
+              {studyProgression ? (
+                <span className="rounded-full bg-[var(--card-strong)] px-3 py-2">
+                  Year {studyProgression.year}, term {studyProgression.term}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
               href="/events"
@@ -40,12 +56,18 @@ export default async function DashboardPage({
             >
               Update settings
             </Link>
+            <Link
+              href="/friends#same-degree"
+              className="rounded-full border border-[var(--border)] px-5 py-3 text-sm font-semibold transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+            >
+              Find mutuals
+            </Link>
           </div>
         </div>
 
         <div className="rounded-[32px] border border-[var(--border)] bg-[var(--card)] p-7 shadow-[var(--shadow)] backdrop-blur-sm">
           <h2 className="text-xl font-semibold">Current subjects</h2>
-          <div className="mt-5 grid gap-4 sm:grid-cols-3">
+          <div className="mt-5 grid gap-2 sm:grid-cols-3">
             {TERMS.map((term) => (
               <div key={term} className="rounded-3xl bg-[var(--card-strong)] p-4">
                 <p className="text-sm font-semibold text-[var(--muted)]">{TERM_LABELS[term]}</p>
@@ -87,7 +109,7 @@ export default async function DashboardPage({
         <div>
           <h2 className="text-2xl font-semibold">Timetable calendar</h2>
           <p className="mt-2 text-sm text-[var(--muted)]">
-            Your saved busy times are used to find shared free windows with friends. The calendar only shows blocks on the dates and terms they belong to.
+            Your saved busy times are used to find shared free windows with friends. The calendar shows dated imports on their real dates and manual blocks as regular weekly classes.
           </p>
         </div>
         <TimetableView blocks={timetableBlocks} />

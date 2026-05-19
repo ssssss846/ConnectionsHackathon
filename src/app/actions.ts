@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { TERMS, orderFriendPair, type Term } from "@/lib/constants";
 import {
   buildEmptySubjects,
+  readInterestsFromFormData,
   readLoginCredentials,
   readSettingsFromFormData,
   readSignUpDetails,
@@ -26,6 +27,13 @@ function getPlannerChoiceKey(choice: Pick<PlannerChoice, "scopeType" | "particip
   return [choice.scopeType, choice.participantUserId ?? "all", choice.subjectCode, choice.activity].join(":");
 }
 
+function canAccessPlan(
+  plan: { owner_user_id: string; friend_user_id: string | null } | null,
+  userId: string,
+): plan is { owner_user_id: string; friend_user_id: string | null } {
+  return Boolean(plan && (plan.owner_user_id === userId || plan.friend_user_id === userId));
+}
+
 export async function signUpAction(_state: FormState, formData: FormData): Promise<FormState> {
   const parsed = readSignUpDetails(formData);
   if ("error" in parsed) return parsed.error;
@@ -41,6 +49,9 @@ export async function signUpAction(_state: FormState, formData: FormData): Promi
         full_name: parsed.data.fullName,
         zid: parsed.data.zid,
         unsw_email: parsed.data.email,
+        degree: parsed.data.degree,
+        enrolled_year: parsed.data.enrolledYear,
+        enrolled_term: parsed.data.enrolledTerm,
       },
     },
   });
@@ -180,6 +191,19 @@ export async function saveSettingsAction(
     }
   }
 
+  const { error: profileError } = await supabase
+    .from("profiles")
+    .update({
+      degree: parsed.data.degree,
+      enrolled_year: parsed.data.enrolledYear,
+      enrolled_term: parsed.data.enrolledTerm,
+    })
+    .eq("id", user!.id);
+
+  if (profileError) {
+    return { error: profileError.message };
+  }
+
   const { error: sourceError } = await supabase.from("user_timetable_sources").upsert(
     termsToUpdate.map((term) => ({
       user_id: user!.id,
@@ -217,6 +241,78 @@ export async function saveSettingsAction(
   revalidatePath("/events");
   revalidatePath("/settings");
   return { success: "Settings saved." };
+}
+
+export async function saveSettingsAndSubjectsAction(
+  state: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const settingsResult = await saveSettingsAction(state, formData);
+  if (settingsResult.error) {
+    return settingsResult;
+  }
+
+  const parsedSubjects = readSubjectsFromFormData(formData);
+  if ("error" in parsedSubjects) return parsedSubjects.error;
+
+  const { supabase, user } = await getViewerContext();
+  const { error: deleteError } = await supabase
+    .from("user_term_subjects")
+    .delete()
+    .eq("user_id", user!.id);
+
+  if (deleteError) {
+    return { error: deleteError.message };
+  }
+
+  const rows = TERMS.flatMap((term) =>
+    parsedSubjects.data[term].map((subject) => ({
+      user_id: user!.id,
+      term,
+      subject_code: subject.code,
+      subject_name: subject.name,
+    })),
+  );
+
+  if (rows.length) {
+    const { error: insertError } = await supabase.from("user_term_subjects").insert(rows);
+    if (insertError) {
+      return { error: insertError.message };
+    }
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/friends");
+  revalidatePath("/settings");
+  return { success: "Settings saved." };
+}
+
+export async function saveOnboardingInterestsAction(
+  _state: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const { supabase, user } = await getViewerContext();
+  const interests = readInterestsFromFormData(formData);
+
+  await supabase.from("user_interests").delete().eq("user_id", user!.id);
+  if (!interests.length) {
+    return { success: "Interests skipped for now." };
+  }
+
+  const { error } = await supabase.from("user_interests").insert(
+    interests.map((interest) => ({
+      user_id: user!.id,
+      interest,
+    })),
+  );
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/events");
+  revalidatePath("/settings");
+  return { success: "Interests saved." };
 }
 
 export async function signOutAction() {
@@ -363,6 +459,62 @@ export async function createSharedPlanAction(formData: FormData) {
   redirect(`/plans/${plan.id}`);
 }
 
+export async function createPersonalPlanAction(formData: FormData) {
+  const term = String(formData.get("term") ?? "") as Term;
+  const { supabase, user } = await getViewerContext();
+
+  if (!TERMS.includes(term)) {
+    redirect(withMessage("/plans", "error", "Choose a valid term for the timetable."));
+  }
+
+  const { data: plan, error } = await supabase
+    .from("shared_term_plans")
+    .insert({
+      owner_user_id: user!.id,
+      friend_user_id: null,
+      term,
+      title: `${term} timetable`,
+      notes: "",
+    })
+    .select("id")
+    .single();
+
+  if (error || !plan) {
+    redirect(withMessage("/plans", "error", error?.message ?? "Could not create timetable."));
+  }
+
+  await supabase.from("shared_term_plan_participants").insert({
+    plan_id: plan.id,
+    user_id: user!.id,
+  });
+
+  revalidatePath("/plans");
+  redirect(`/plans/${plan.id}`);
+}
+
+export async function deleteSharedPlanAction(formData: FormData) {
+  const planId = String(formData.get("plan_id") ?? "");
+  const { supabase, user } = await getViewerContext();
+
+  const { data: plan } = await supabase
+    .from("shared_term_plans")
+    .select("id, owner_user_id")
+    .eq("id", planId)
+    .single();
+
+  if (!plan || plan.owner_user_id !== user!.id) {
+    redirect(withMessage("/plans", "error", "You can only delete timetables you created."));
+  }
+
+  const { error } = await supabase.from("shared_term_plans").delete().eq("id", planId);
+  if (error) {
+    redirect(withMessage("/plans", "error", error.message));
+  }
+
+  revalidatePath("/plans");
+  redirect(withMessage("/plans", "notice", "Timetable deleted."));
+}
+
 export async function addPlanParticipantAction(formData: FormData) {
   const planId = String(formData.get("plan_id") ?? "");
   const participantId = String(formData.get("participant_id") ?? "");
@@ -374,7 +526,7 @@ export async function addPlanParticipantAction(formData: FormData) {
     .eq("id", planId)
     .single();
 
-  if (!plan || (plan.owner_user_id !== user!.id && plan.friend_user_id !== user!.id)) {
+  if (!canAccessPlan(plan, user!.id)) {
     redirect(withMessage("/friends", "error", "You do not have access to that plan."));
   }
 
@@ -402,11 +554,11 @@ export async function removePlanParticipantAction(formData: FormData) {
     .eq("id", planId)
     .single();
 
-  if (!plan || (plan.owner_user_id !== user!.id && plan.friend_user_id !== user!.id)) {
+  if (!canAccessPlan(plan, user!.id)) {
     redirect(withMessage("/friends", "error", "You do not have access to that plan."));
   }
 
-  if (participantId === plan.owner_user_id || participantId === plan.friend_user_id) {
+  if (participantId === plan.owner_user_id || (plan.friend_user_id && participantId === plan.friend_user_id)) {
     redirect(withMessage(`/plans/${planId}`, "error", "Core participants cannot be removed from this plan."));
   }
 
@@ -441,7 +593,7 @@ export async function savePlannerWorkspaceAction(formData: FormData) {
     .eq("id", planId)
     .single();
 
-  if (!plan || (plan.owner_user_id !== user!.id && plan.friend_user_id !== user!.id)) {
+  if (!canAccessPlan(plan, user!.id)) {
     redirect(withMessage("/friends", "error", "You do not have access to update that plan."));
   }
 

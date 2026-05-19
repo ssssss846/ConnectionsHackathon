@@ -6,13 +6,20 @@ create table if not exists public.profiles (
   full_name text,
   zid text,
   unsw_email text,
+  degree text,
+  enrolled_year integer,
+  enrolled_term text,
   created_at timestamptz not null default timezone('utc', now()),
-  constraint profiles_username_format check (username ~ '^[a-z0-9_]{3,20}$')
+  constraint profiles_username_format check (username ~ '^[a-z0-9_]{3,20}$'),
+  constraint profiles_enrolled_term_check check (enrolled_term is null or enrolled_term in ('T1', 'T2', 'T3'))
 );
 
 alter table public.profiles add column if not exists full_name text;
 alter table public.profiles add column if not exists zid text;
 alter table public.profiles add column if not exists unsw_email text;
+alter table public.profiles add column if not exists degree text;
+alter table public.profiles add column if not exists enrolled_year integer;
+alter table public.profiles add column if not exists enrolled_term text;
 
 create unique index if not exists profiles_zid_unique_idx on public.profiles (zid);
 create unique index if not exists profiles_unsw_email_unique_idx on public.profiles (unsw_email);
@@ -29,21 +36,30 @@ begin
     username,
     full_name,
     zid,
-    unsw_email
+    unsw_email,
+    degree,
+    enrolled_year,
+    enrolled_term
   )
   values (
     new.id,
     coalesce(lower(new.raw_user_meta_data ->> 'username'), lower(new.raw_user_meta_data ->> 'zid')),
     new.raw_user_meta_data ->> 'full_name',
     lower(new.raw_user_meta_data ->> 'zid'),
-    lower(coalesce(new.raw_user_meta_data ->> 'unsw_email', new.email))
+    lower(coalesce(new.raw_user_meta_data ->> 'unsw_email', new.email)),
+    new.raw_user_meta_data ->> 'degree',
+    nullif(new.raw_user_meta_data ->> 'enrolled_year', '')::integer,
+    new.raw_user_meta_data ->> 'enrolled_term'
   )
   on conflict (id) do update
   set
     username = excluded.username,
     full_name = excluded.full_name,
     zid = excluded.zid,
-    unsw_email = excluded.unsw_email;
+    unsw_email = excluded.unsw_email,
+    degree = excluded.degree,
+    enrolled_year = excluded.enrolled_year,
+    enrolled_term = excluded.enrolled_term;
 
   return new;
 end;
@@ -53,6 +69,70 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+create or replace function public.discover_same_degree_mutuals()
+returns table (
+  id uuid,
+  username text,
+  full_name text,
+  zid text,
+  unsw_email text,
+  degree text,
+  enrolled_year integer,
+  enrolled_term text,
+  created_at timestamptz,
+  mutual_friend_count bigint
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with viewer as (
+    select id, degree
+    from public.profiles
+    where id = auth.uid()
+  ),
+  direct_friends as (
+    select case when f.user_a_id = auth.uid() then f.user_b_id else f.user_a_id end as friend_id
+    from public.friendships f
+    where f.user_a_id = auth.uid() or f.user_b_id = auth.uid()
+  ),
+  friend_edges as (
+    select
+      df.friend_id as mutual_friend_id,
+      case when f.user_a_id = df.friend_id then f.user_b_id else f.user_a_id end as candidate_id
+    from direct_friends df
+    join public.friendships f
+      on f.user_a_id = df.friend_id or f.user_b_id = df.friend_id
+  )
+  select
+    p.id,
+    p.username,
+    p.full_name,
+    p.zid,
+    p.unsw_email,
+    p.degree,
+    p.enrolled_year,
+    p.enrolled_term,
+    p.created_at,
+    count(distinct fe.mutual_friend_id) as mutual_friend_count
+  from friend_edges fe
+  join viewer v on true
+  join public.profiles p on p.id = fe.candidate_id
+  where p.id <> auth.uid()
+    and v.degree is not null
+    and p.degree = v.degree
+    and not exists (
+      select 1
+      from direct_friends df
+      where df.friend_id = p.id
+    )
+  group by p.id, p.username, p.full_name, p.zid, p.unsw_email, p.degree, p.enrolled_year, p.enrolled_term, p.created_at
+  order by mutual_friend_count desc, p.full_name asc
+  limit 20;
+$$;
+
+grant execute on function public.discover_same_degree_mutuals() to authenticated;
 
 create table if not exists public.user_term_subjects (
   id uuid primary key default gen_random_uuid(),
@@ -99,14 +179,16 @@ create table if not exists public.friendships (
 create table if not exists public.shared_term_plans (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references public.profiles (id) on delete cascade,
-  friend_user_id uuid not null references public.profiles (id) on delete cascade,
+  friend_user_id uuid references public.profiles (id) on delete cascade,
   term text not null,
   title text not null,
   notes text,
   created_at timestamptz not null default timezone('utc', now()),
   constraint shared_term_plans_term_check check (term in ('T1', 'T2', 'T3')),
-  constraint shared_term_plans_distinct_users check (owner_user_id <> friend_user_id)
+  constraint shared_term_plans_distinct_users check (friend_user_id is null or owner_user_id <> friend_user_id)
 );
+
+alter table public.shared_term_plans alter column friend_user_id drop not null;
 
 create table if not exists public.shared_term_plan_participants (
   id uuid primary key default gen_random_uuid(),

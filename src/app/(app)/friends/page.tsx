@@ -159,6 +159,63 @@ export default async function FriendsPage({
       ) : null}
 
       <section className="rounded-[28px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)] backdrop-blur-sm">
+        <div id="same-degree" className="scroll-mt-8" />
+        <h2 className="text-xl font-semibold">Friends taking your degree</h2>
+        <div className="mt-4 space-y-3">
+          {data.sameDegreeFriends.length ? (
+            data.sameDegreeFriends.map((friend) => (
+              <Link
+                key={friend.id}
+                href={`/friends/${friend.id}`}
+                className="block rounded-2xl bg-[var(--card-strong)] px-4 py-4 transition hover:-translate-y-0.5 hover:shadow-lg"
+              >
+                <p className="font-semibold">{friend.full_name}</p>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  {friend.degree} · {friend.zid}
+                </p>
+              </Link>
+            ))
+          ) : (
+            <p className="text-sm text-[var(--muted)]">
+              No accepted friends have the same degree saved yet.
+            </p>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-[28px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)] backdrop-blur-sm">
+        <h2 className="text-xl font-semibold">Mutuals taking your degree</h2>
+        <div className="mt-4 space-y-3">
+          {data.degreeMutuals.length ? (
+            data.degreeMutuals.map((mutual) => (
+              <div
+                key={mutual.id}
+                className="flex flex-col gap-3 rounded-2xl bg-[var(--card-strong)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="font-semibold">{mutual.full_name}</p>
+                  <p className="mt-1 text-sm text-[var(--muted)]">
+                    {mutual.degree} · {mutual.mutual_friend_count} mutual {mutual.mutual_friend_count === 1 ? "friend" : "friends"}
+                  </p>
+                </div>
+                <form action={sendFriendRequestAction}>
+                  <input type="hidden" name="recipient_id" value={mutual.id} />
+                  <input type="hidden" name="return_to" value="/friends#same-degree" />
+                  <button className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white">
+                    Add friend
+                  </button>
+                </form>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-[var(--muted)]">
+              No same-degree mutuals found through your friends yet.
+            </p>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-[28px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)] backdrop-blur-sm">
         <h2 className="text-xl font-semibold">Friends taking the same subjects</h2>
         <div className="mt-4 space-y-3">
           {data.sharedSubjectsByFriend.length ? (

@@ -62,6 +62,11 @@ type AutoTask = {
   options: PlannerClassOption[];
 };
 
+type PlacedOption = {
+  task: AutoTask;
+  option: PlannerClassOption;
+};
+
 type ToastMessage = {
   id: number;
   tone: "success" | "error" | "info";
@@ -275,6 +280,16 @@ export function PlannerWorkspace({
     );
   }
 
+  function canOverlapByRule(leftTask: AutoTask, rightTask: AutoTask) {
+    const leftActivity = leftTask.activity.toLowerCase();
+    const rightActivity = rightTask.activity.toLowerCase();
+    return (
+      (leftActivity.includes("lec") && rightActivity.includes("lec")) ||
+      leftTask.options.length === 1 ||
+      rightTask.options.length === 1
+    );
+  }
+
   function autoGenerateChoices() {
     const tasks: AutoTask[] = [
       ...commonSubjects.flatMap((subject) =>
@@ -305,22 +320,24 @@ export function PlannerWorkspace({
       ),
     ];
 
-    const scheduleByParticipant = new Map<string, PlannerClassOption[]>();
+    const scheduleByParticipant = new Map<string, PlacedOption[]>();
     const best = { choices: [] as PlannerChoice[] };
-    const deadline = Date.now() + 1500;
+    const deadline = Date.now() + 6000;
     let timedOut = false;
 
     function canUseOption(task: AutoTask, option: PlannerClassOption) {
       return task.participantIds.every((participantId) => {
         const currentSchedule = scheduleByParticipant.get(participantId) ?? [];
-        return currentSchedule.every((existing) => !overlaps(existing, option));
+        return currentSchedule.every(
+          (existing) => canOverlapByRule(task, existing.task) || !overlaps(existing.option, option),
+        );
       });
     }
 
     function placeOption(task: AutoTask, option: PlannerClassOption) {
       for (const participantId of task.participantIds) {
         const currentSchedule = scheduleByParticipant.get(participantId) ?? [];
-        scheduleByParticipant.set(participantId, [...currentSchedule, option]);
+        scheduleByParticipant.set(participantId, [...currentSchedule, { task, option }]);
       }
     }
 
@@ -329,7 +346,7 @@ export function PlannerWorkspace({
         const currentSchedule = scheduleByParticipant.get(participantId) ?? [];
         scheduleByParticipant.set(
           participantId,
-          currentSchedule.filter((existing) => existing.classId !== option.classId),
+          currentSchedule.filter((existing) => existing.option.classId !== option.classId),
         );
       }
     }
@@ -347,7 +364,7 @@ export function PlannerWorkspace({
         }
 
         for (const candidate of remainingTask.options) {
-          if (overlaps(option, candidate)) {
+          if (!canOverlapByRule(task, remainingTask) && overlaps(option, candidate)) {
             conflictCost += 1;
           }
         }
@@ -569,7 +586,7 @@ export function PlannerWorkspace({
         </div>
       ) : null}
 
-      <section className="grid gap-3 xl:grid-cols-[96px_minmax(0,1fr)_auto] xl:items-center">
+      <section className="relative z-[200] grid gap-3 xl:grid-cols-[96px_minmax(0,1fr)_auto] xl:items-center">
         <div className="flex items-center justify-center rounded-[24px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-center shadow-[var(--shadow)] backdrop-blur-sm">
           <p className="text-2xl font-semibold tracking-tight">{plan.term}</p>
         </div>
@@ -655,7 +672,7 @@ export function PlannerWorkspace({
                   })}
               </div>
             </div>
-            <div className="relative min-w-[220px] shrink-0">
+            <div className="relative z-[300] min-w-[220px] shrink-0">
               <input
                 value={participantSearch}
                 onChange={(event) => setParticipantSearch(event.target.value)}
@@ -664,7 +681,7 @@ export function PlannerWorkspace({
                 disabled={!addableFriends.length}
               />
               {addableFriends.length && participantSearch.trim() ? (
-                <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 rounded-2xl border border-[var(--border)] bg-white p-2 shadow-xl">
+                <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[500] rounded-2xl border border-[var(--border)] bg-white p-2 shadow-xl">
                   <div className="max-h-56 overflow-y-auto">
                     {filteredAddableFriends.length ? (
                       filteredAddableFriends.map((friend) => (
@@ -730,7 +747,7 @@ export function PlannerWorkspace({
         </div>
       </section>
 
-      <div className="grid gap-5 xl:grid-cols-[1.45fr_0.55fr]">
+      <div className="relative z-0 grid gap-5 xl:grid-cols-[1.45fr_0.55fr]">
         <section className="space-y-5">
           <div className="rounded-[32px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)] backdrop-blur-sm">
             <div className="mb-4 grid grid-cols-[56px_repeat(5,minmax(0,1fr))] gap-2">

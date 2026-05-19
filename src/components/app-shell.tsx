@@ -4,11 +4,13 @@ import { APP_NAME } from "@/lib/constants";
 import type { Profile } from "@/lib/types";
 
 type AppShellProps = {
-  profile: Profile;
+  profile: Profile | null;
   children: React.ReactNode;
 };
 
 export function AppShell({ profile, children }: AppShellProps) {
+  const displayName = profile?.full_name?.trim() || profile?.username?.trim() || "account";
+
   return (
     <div className="app-shell">
       <header className="border-b border-[var(--border)] backdrop-blur-sm">
@@ -40,7 +42,7 @@ export function AppShell({ profile, children }: AppShellProps) {
                 type="submit"
                 className="rounded-full border border-[var(--border)] px-4 py-2 transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
               >
-                Log out {profile.full_name}
+                Log out {displayName}
               </button>
             </form>
           </nav>
