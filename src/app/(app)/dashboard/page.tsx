@@ -1,8 +1,7 @@
 import Link from "next/link";
 
-import { saveSubjectsAction } from "@/app/actions";
 import { Notice } from "@/components/notice";
-import { SubjectForm } from "@/components/subject-form";
+import { TimetableView } from "@/components/timetable-view";
 import { TERMS, TERM_LABELS } from "@/lib/constants";
 import { getDashboardData } from "@/lib/data";
 
@@ -11,7 +10,8 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ notice?: string; error?: string }>;
 }) {
-  const { profile, subjectsByTerm, sharedFriendsBySubject } = await getDashboardData();
+  const { profile, subjectsByTerm, sharedFriendsBySubject, timetableBlocks } =
+    await getDashboardData();
   const params = await searchParams;
 
   return (
@@ -29,10 +29,16 @@ export default async function DashboardPage({
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
-              href="/friends"
+              href="/events"
               className="rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)]"
             >
-              Manage friends
+              Find events together
+            </Link>
+            <Link
+              href="/settings"
+              className="rounded-full border border-[var(--border)] px-5 py-3 text-sm font-semibold transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+            >
+              Update settings
             </Link>
           </div>
         </div>
@@ -79,17 +85,18 @@ export default async function DashboardPage({
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-2xl font-semibold">Update your yearly subjects</h2>
+          <h2 className="text-2xl font-semibold">Timetable calendar</h2>
           <p className="mt-2 text-sm text-[var(--muted)]">
-            Search real UNSW subjects and add up to four per term.
+            Your saved busy times are used to find shared free windows with friends. The calendar only shows blocks on the dates and terms they belong to.
           </p>
         </div>
-        <SubjectForm
-          action={saveSubjectsAction}
-          defaultSubjects={subjectsByTerm}
-          submitLabel="Save subjects"
-          redirectTo="/dashboard?notice=Subjects%20saved."
-        />
+        <TimetableView blocks={timetableBlocks} />
+        <Link
+          href="/settings"
+          className="inline-flex rounded-full border border-[var(--border)] px-5 py-3 text-sm font-semibold transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+        >
+          Edit timetable and courses
+        </Link>
       </section>
     </div>
   );

@@ -1,4 +1,4 @@
-import type { Term } from "@/lib/constants";
+import type { Interest, Term } from "@/lib/constants";
 
 export type FormState = {
   error?: string;
@@ -107,4 +107,39 @@ export type PlannerChoice = {
   subjectCode: string;
   activity: string;
   classId: string;
+};
+
+export type UserInterestRow = {
+  user_id: string;
+  interest: Interest;
+};
+
+export type TimetableSource = {
+  id?: string;
+  user_id: string;
+  term: Term;
+  source_type: "manual" | "calendar_url" | "auto_reference";
+  calendar_url: string | null;
+  notes: string | null;
+  updated_at?: string;
+};
+
+export type TimetableBlock = {
+  id?: string;
+  user_id: string;
+  term: Term;
+  start_at?: string | null;
+  end_at?: string | null;
+  day_of_week: number;
+  start_minutes: number;
+  end_minutes: number;
+  label: string;
+  location: string | null;
+  source_type: "manual" | "calendar_url" | "auto_reference";
+};
+
+export type FreeTimeSlot = {
+  dayOfWeek: number;
+  startMinutes: number;
+  endMinutes: number;
 };
