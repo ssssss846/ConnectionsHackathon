@@ -423,9 +423,15 @@ export async function getFriendDetail(friendId: string) {
     redirect("/friends?error=You can only view accepted friends.");
   }
 
-  const [mySubjects, friendSubjects] = await Promise.all([
+  const [mySubjects, friendSubjects, friendTimetableBlocks, { data: friendDegreeRows }] = await Promise.all([
     getUserSubjects(user!.id),
     getUserSubjects(friendProfile.id),
+    getUserTimetableBlocksForTerms(friendProfile.id),
+    profile?.degree
+      ? supabase.rpc("discover_friend_same_degree_friends", {
+          target_friend_id: friendProfile.id,
+        })
+      : Promise.resolve({ data: [] }),
   ]);
 
   const mineByTerm = groupSubjectsByTerm(mySubjects);
@@ -446,6 +452,8 @@ export async function getFriendDetail(friendId: string) {
     mySubjects: mineByTerm,
     friendSubjects: friendByTerm,
     commonSubjects,
+    friendTimetableBlocks,
+    friendDegreeFriends: (friendDegreeRows ?? []) as DegreeMutual[],
     plans: (plans ?? []) as SharedPlanRow[],
   };
 }

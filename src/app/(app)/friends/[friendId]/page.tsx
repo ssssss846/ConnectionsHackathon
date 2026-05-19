@@ -1,7 +1,8 @@
 import Link from "next/link";
 
-import { createSharedPlanAction } from "@/app/actions";
+import { createSharedPlanAction, removeFriendAction, sendFriendRequestAction } from "@/app/actions";
 import { Notice } from "@/components/notice";
+import { TimetableView } from "@/components/timetable-view";
 import { TERMS, TERM_LABELS } from "@/lib/constants";
 import { getFriendDetail } from "@/lib/data";
 
@@ -13,7 +14,14 @@ export default async function FriendDetailPage({
   searchParams: Promise<{ notice?: string; error?: string }>;
 }) {
   const [{ friendId }, query] = await Promise.all([params, searchParams]);
-  const { friendProfile, friendSubjects, commonSubjects, plans } = await getFriendDetail(friendId);
+  const {
+    friendProfile,
+    friendSubjects,
+    commonSubjects,
+    friendTimetableBlocks,
+    friendDegreeFriends,
+    plans,
+  } = await getFriendDetail(friendId);
 
   return (
     <div className="space-y-8">
@@ -29,6 +37,13 @@ export default async function FriendDetailPage({
           <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--muted)]">
             Compare your subjects with {friendProfile.full_name} and start a term plan together.
           </p>
+          <form action={removeFriendAction} className="mt-5">
+            <input type="hidden" name="friend_id" value={friendProfile.id} />
+            <input type="hidden" name="return_to" value={`/friends/${friendProfile.id}`} />
+            <button className="rounded-full border border-[var(--danger)]/30 px-4 py-2 text-sm font-semibold text-[var(--danger)] transition hover:bg-[var(--danger-soft)]">
+              Remove friend
+            </button>
+          </form>
         </div>
 
         <form
@@ -58,6 +73,20 @@ export default async function FriendDetailPage({
 
       {query.notice ? <Notice tone="success" message={query.notice} /> : null}
       {query.error ? <Notice tone="error" message={query.error} /> : null}
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-2xl font-semibold">{friendProfile.full_name}&apos;s calendar</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            Their saved classes and busy times, shown as a read-only calendar.
+          </p>
+        </div>
+        <TimetableView
+          blocks={friendTimetableBlocks}
+          showFreeSlots={false}
+          emptyMessage="They have not saved a timetable yet."
+        />
+      </section>
 
       <section className="grid gap-5 lg:grid-cols-3">
         {TERMS.map((term) => (
@@ -90,6 +119,38 @@ export default async function FriendDetailPage({
             </ul>
           </div>
         ))}
+      </section>
+
+      <section className="rounded-[28px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)] backdrop-blur-sm">
+        <h2 className="text-xl font-semibold">Their friends taking your degree</h2>
+        <div className="mt-4 space-y-3">
+          {friendDegreeFriends.length ? (
+            friendDegreeFriends.map((entry) => (
+              <div
+                key={entry.id}
+                className="flex flex-col gap-3 rounded-2xl bg-[var(--card-strong)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="font-semibold">{entry.full_name}</p>
+                  <p className="mt-1 text-sm text-[var(--muted)]">
+                    {entry.degree} · friend of {friendProfile.full_name}
+                  </p>
+                </div>
+                <form action={sendFriendRequestAction}>
+                  <input type="hidden" name="recipient_id" value={entry.id} />
+                  <input type="hidden" name="return_to" value={`/friends/${friendProfile.id}`} />
+                  <button className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white">
+                    Add friend
+                  </button>
+                </form>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-[var(--muted)]">
+              No same-degree friends from their network are available yet.
+            </p>
+          )}
+        </div>
       </section>
 
       <section className="rounded-[28px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)] backdrop-blur-sm">

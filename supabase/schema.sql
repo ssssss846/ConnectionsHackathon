@@ -134,6 +134,75 @@ $$;
 
 grant execute on function public.discover_same_degree_mutuals() to authenticated;
 
+create or replace function public.discover_friend_same_degree_friends(target_friend_id uuid)
+returns table (
+  id uuid,
+  username text,
+  full_name text,
+  zid text,
+  unsw_email text,
+  degree text,
+  enrolled_year integer,
+  enrolled_term text,
+  created_at timestamptz,
+  mutual_friend_count bigint
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with viewer as (
+    select id, degree
+    from public.profiles
+    where id = auth.uid()
+  ),
+  target_friendship as (
+    select 1
+    from public.friendships f
+    where f.user_a_id = least(auth.uid(), target_friend_id)
+      and f.user_b_id = greatest(auth.uid(), target_friend_id)
+  ),
+  viewer_friends as (
+    select case when f.user_a_id = auth.uid() then f.user_b_id else f.user_a_id end as friend_id
+    from public.friendships f
+    where f.user_a_id = auth.uid() or f.user_b_id = auth.uid()
+  ),
+  target_edges as (
+    select case when f.user_a_id = target_friend_id then f.user_b_id else f.user_a_id end as candidate_id
+    from public.friendships f
+    where f.user_a_id = target_friend_id or f.user_b_id = target_friend_id
+  )
+  select
+    p.id,
+    p.username,
+    p.full_name,
+    p.zid,
+    p.unsw_email,
+    p.degree,
+    p.enrolled_year,
+    p.enrolled_term,
+    p.created_at,
+    count(*)::bigint as mutual_friend_count
+  from target_edges te
+  join target_friendship tf on true
+  join viewer v on true
+  join public.profiles p on p.id = te.candidate_id
+  where p.id <> auth.uid()
+    and p.id <> target_friend_id
+    and v.degree is not null
+    and p.degree = v.degree
+    and not exists (
+      select 1
+      from viewer_friends vf
+      where vf.friend_id = p.id
+    )
+  group by p.id, p.username, p.full_name, p.zid, p.unsw_email, p.degree, p.enrolled_year, p.enrolled_term, p.created_at
+  order by p.full_name asc
+  limit 20;
+$$;
+
+grant execute on function public.discover_friend_same_degree_friends(uuid) to authenticated;
+
 create table if not exists public.user_term_subjects (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
@@ -375,6 +444,13 @@ on public.friendships
 for insert
 to authenticated
 with check (auth.uid() = user_a_id or auth.uid() = user_b_id);
+
+drop policy if exists "friendships delete participants" on public.friendships;
+create policy "friendships delete participants"
+on public.friendships
+for delete
+to authenticated
+using (auth.uid() = user_a_id or auth.uid() = user_b_id);
 
 drop policy if exists "shared plans visible to participants" on public.shared_term_plans;
 create policy "shared plans visible to participants"

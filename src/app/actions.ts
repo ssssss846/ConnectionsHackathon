@@ -413,6 +413,42 @@ export async function respondToFriendRequestAction(formData: FormData) {
   );
 }
 
+export async function removeFriendAction(formData: FormData) {
+  const friendId = String(formData.get("friend_id") ?? "");
+  const returnTo = String(formData.get("return_to") ?? "/friends");
+  const { supabase, user } = await getViewerContext();
+
+  if (!friendId || friendId === user!.id) {
+    redirect(withMessage(returnTo, "error", "Choose a valid friend to remove."));
+  }
+
+  const [userAId, userBId] = orderFriendPair(user!.id, friendId);
+  const { data: deletedRows, error } = await supabase
+    .from("friendships")
+    .delete()
+    .eq("user_a_id", userAId)
+    .eq("user_b_id", userBId)
+    .select("id");
+
+  if (error) {
+    redirect(withMessage(returnTo, "error", error.message));
+  }
+
+  if (!deletedRows?.length) {
+    redirect(
+      withMessage(
+        returnTo,
+        "error",
+        "Could not remove that friend. Please apply the latest Supabase policies and try again.",
+      ),
+    );
+  }
+
+  revalidatePath("/friends");
+  revalidatePath(`/friends/${friendId}`);
+  redirect(withMessage("/friends", "notice", "Friend removed."));
+}
+
 export async function createSharedPlanAction(formData: FormData) {
   const friendId = String(formData.get("friend_id") ?? "");
   const term = String(formData.get("term") ?? "") as Term;
