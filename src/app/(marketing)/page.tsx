@@ -35,6 +35,7 @@ export default function HomePage() {
                 Log in
               </Link>
             </div>
+
           </div>
 
           <section className="rounded-[32px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)] backdrop-blur-sm">
