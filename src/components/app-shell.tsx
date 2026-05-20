@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { BrandLogo } from "@/components/brand-logo";
+import { APP_NAME } from "@/lib/constants";
 import type { Profile } from "@/lib/types";
 
 type AppShellProps = {
@@ -16,8 +17,12 @@ export function AppShell({ profile, children }: AppShellProps) {
       <header className="border-b border-[var(--border)] backdrop-blur-sm">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-4 sm:px-8">
           <div className="min-w-0">
-            <Link href="/dashboard" className="inline-flex" aria-label="Go to dashboard">
+            <Link href="/dashboard" className="inline-flex items-center gap-3" aria-label="Go to dashboard">
               <BrandLogo priority />
+              <span>
+                <span className="block text-lg font-semibold tracking-tight">{APP_NAME}</span>
+                <span className="block text-sm text-[var(--muted)]">UNSW subject planning with your mates.</span>
+              </span>
             </Link>
           </div>
           <nav className="flex items-center gap-4 text-sm font-medium">

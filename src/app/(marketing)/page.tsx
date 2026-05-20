@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { BrandLogo } from "@/components/brand-logo";
 import { APP_NAME } from "@/lib/constants";
 
 export default function HomePage() {
@@ -9,7 +8,6 @@ export default function HomePage() {
       <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-5 py-12 sm:px-8">
         <section className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
           <div className="space-y-6">
-            <BrandLogo size="hero" priority />
             <span className="inline-flex rounded-full border border-[var(--border)] bg-white/70 px-4 py-2 text-sm font-medium text-[var(--muted)] backdrop-blur-sm">
               Built for UNSW students first
             </span>

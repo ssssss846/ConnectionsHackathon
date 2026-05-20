@@ -1,13 +1,11 @@
 import { AuthForm } from "@/components/auth-form";
 import { signUpAction } from "@/app/actions";
-import { BrandLogo } from "@/components/brand-logo";
 
 export default function SignUpPage() {
   return (
     <div className="app-shell">
       <main className="mx-auto flex min-h-screen w-full max-w-2xl items-center px-5 py-12">
         <section className="w-full rounded-[32px] border border-[var(--border)] bg-[var(--card)] p-8 shadow-[var(--shadow)] backdrop-blur-sm">
-          <BrandLogo size="auth" priority className="mb-8" />
           <p className="text-sm font-medium uppercase tracking-[0.18em] text-[var(--muted)]">
             Start here
           </p>
