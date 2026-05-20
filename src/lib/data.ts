@@ -96,7 +96,7 @@ export async function getViewerContext(redirectOnMissing = true) {
       redirect("/login");
     }
 
-    return { supabase, user: null, profile: null };
+    return { supabase, user: null, profile: null, profileError: null };
   }
 
   const { data: initialProfile } = await supabase
@@ -105,18 +105,25 @@ export async function getViewerContext(redirectOnMissing = true) {
     .eq("id", user.id)
     .single();
   let profile = (initialProfile ?? null) as Profile | null;
+  let profileError: string | null = null;
 
   if (!profile) {
     const fallbackProfile = buildFallbackProfile(user as Viewer & { user_metadata?: Record<string, unknown> });
 
     if (fallbackProfile) {
-      const { data: repairedProfile } = await supabase
+      const { data: repairedProfile, error: repairError } = await supabase
         .from("profiles")
         .upsert(fallbackProfile, { onConflict: "id" })
         .select(PROFILE_SELECT)
         .single();
 
-      profile = (repairedProfile as Profile | null) ?? fallbackProfile;
+      if (repairError) {
+        profileError = repairError.message;
+      } else {
+        profile = (repairedProfile as Profile | null) ?? null;
+      }
+    } else {
+      profileError = "Your profile could not be created from your signup details.";
     }
   }
 
@@ -124,6 +131,7 @@ export async function getViewerContext(redirectOnMissing = true) {
     supabase,
     user: user as Viewer,
     profile: profile as Profile | null,
+    profileError,
   };
 }
 

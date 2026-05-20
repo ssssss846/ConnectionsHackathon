@@ -36,6 +36,14 @@ function canAccessPlan(
   return Boolean(plan && plan.owner_user_id === userId);
 }
 
+function getMissingProfileState(profileError?: string | null): FormState {
+  return {
+    error: profileError
+      ? `We could not finish creating your profile: ${profileError}`
+      : "We could not finish creating your profile yet. Please refresh and try again.",
+  };
+}
+
 async function saveSettingsForUser(
   supabase: SupabaseServerClient,
   userId: string,
@@ -209,7 +217,10 @@ export async function saveSubjectsAction(
   if ("error" in parsed) return parsed.error;
 
   const redirectTo = String(formData.get("redirect_to") ?? "/dashboard");
-  const { supabase, user } = await getViewerContext();
+  const { supabase, user, profile, profileError } = await getViewerContext();
+  if (!profile) {
+    return getMissingProfileState(profileError);
+  }
 
   const { error: deleteError } = await supabase
     .from("user_term_subjects")
@@ -246,7 +257,11 @@ export async function saveSettingsAction(
   _state: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const { supabase, user } = await getViewerContext();
+  const { supabase, user, profile, profileError } = await getViewerContext();
+  if (!profile) {
+    return getMissingProfileState(profileError);
+  }
+
   const result = await saveSettingsForUser(supabase, user!.id, formData);
   if (result.error) return result;
 
@@ -260,7 +275,11 @@ export async function saveSettingsAndSubjectsAction(
   _state: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const { supabase, user } = await getViewerContext();
+  const { supabase, user, profile, profileError } = await getViewerContext();
+  if (!profile) {
+    return getMissingProfileState(profileError);
+  }
+
   const settingsResult = await saveSettingsForUser(supabase, user!.id, formData);
   if (settingsResult.error) {
     return settingsResult;
@@ -304,7 +323,11 @@ export async function saveOnboardingInterestsAction(
   _state: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const { supabase, user } = await getViewerContext();
+  const { supabase, user, profile, profileError } = await getViewerContext();
+  if (!profile) {
+    return getMissingProfileState(profileError);
+  }
+
   const interests = readInterestsFromFormData(formData);
 
   await supabase.from("user_interests").delete().eq("user_id", user!.id);
